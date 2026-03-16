@@ -1,159 +1,120 @@
 defmodule Locus.Fibonacci do
   @moduledoc """
-  Fibonacci-based block unlock calculations for city phase transitions.
-
-  The Fibonacci sequence (1, 1, 2, 3, 5, 8, 13, 21, ...) determines
-  when each city phase unlocks. Each phase N requires Fib(N) × base_blocks
-  cumulative blocks from the city's founding.
-
-  ## Phase Unlock Schedule
-
-  With default base_blocks = 144 (~1 day at 10-min blocks):
-
-      Phase 1 (Founded):       Fib(1) × 144 =   144 blocks (~1 day)
-      Phase 2 (Settled):       Fib(2) × 144 =   288 blocks (~2 days cumulative)
-      Phase 3 (Established):   Fib(3) × 144 =   576 blocks (~4 days cumulative)
-      Phase 4 (Thriving):      Fib(4) × 144 = 1,008 blocks (~7 days cumulative)
-      Phase 5 (Metropolitan):  Fib(5) × 144 = 1,728 blocks (~12 days cumulative)
-      Phase 6 (Sovereign):     Fib(6) × 144 = 2,880 blocks (~20 days cumulative)
+  Fibonacci sequence calculations for city block unlocking.
+  
+  Per spec 02-city-lifecycle.md:
+  - Blocks unlock based on CITIZEN COUNT (not block height)
+  - Sequence: 1, 1, 2, 3, 5, 8, 13, 21, 34...
+  - Citizen count thresholds determine how many /16 blocks are unlocked
+  
+  CORRECT (per spec):
+  - 1 citizen = 2 blocks (Genesis)
+  - 4 citizens = 5 blocks (Village)  
+  - 9 citizens = 8 blocks (Town)
+  - 21 citizens = 16 blocks (City)
+  - 51 citizens = 24 blocks (Metropolis)
+  
+  WRONG (previous implementation):
+  - Using block height: 144 blocks, 288 blocks, etc.
+  - This is NOT what the spec says
   """
 
   @doc """
-  Return the Nth Fibonacci number (1-indexed).
-
+  Returns the first n Fibonacci numbers.
+  
   ## Examples
-
-      iex> Locus.Fibonacci.at(1)
-      1
-      iex> Locus.Fibonacci.at(6)
-      8
-      iex> Locus.Fibonacci.at(10)
-      55
-  """
-  @spec at(pos_integer()) :: pos_integer()
-  def at(n) when is_integer(n) and n >= 1 do
-    do_fib(n, 1, 1)
-  end
-
-  defp do_fib(1, a, _b), do: a
-  defp do_fib(n, a, b), do: do_fib(n - 1, b, a + b)
-
-  @doc """
-  Generate the first N Fibonacci numbers.
-
-  ## Examples
-
-      iex> Locus.Fibonacci.sequence(6)
-      [1, 1, 2, 3, 5, 8]
-      iex> Locus.Fibonacci.sequence(10)
+      iex> Fibonacci.sequence(1)
+      [1]
+      
+      iex> Fibonacci.sequence(5)
+      [1, 1, 2, 3, 5]
+      
+      iex> Fibonacci.sequence(10)
       [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
   """
-  @spec sequence(pos_integer()) :: [pos_integer()]
-  def sequence(n) when is_integer(n) and n >= 1 do
-    Enum.map(1..n, &at/1)
+  @spec sequence(non_neg_integer()) :: list(non_neg_integer())
+  def sequence(0), do: []
+  def sequence(1), do: [1]
+  def sequence(2), do: [1, 1]
+  
+  def sequence(n) when n > 2 do
+    sequence(n - 1) ++ [next_fib(List.last(sequence(n - 1)), List.last(sequence(n - 1) |> Enum.drop(-1)))]
   end
-
+  
+  defp next_fib(a, b), do: a + b
+  
   @doc """
-  Get the block threshold for a city phase (1-6).
-
-  Returns the cumulative number of blocks from founding required to
-  unlock the given phase. Each phase adds Fib(phase) × base_blocks.
-
+  Returns the sum of first n Fibonacci numbers.
+  
   ## Examples
-
-      iex> Locus.Fibonacci.phase_threshold(1)
-      144
-      iex> Locus.Fibonacci.phase_threshold(6)
-      2880
-  """
-  @spec phase_threshold(1..6) :: pos_integer()
-  def phase_threshold(phase) when phase >= 1 and phase <= 6 do
-    base = base_blocks()
-
-    1..phase
-    |> Enum.map(&at/1)
-    |> Enum.sum()
-    |> Kernel.*(base)
-  end
-
-  @doc """
-  Get all 6 phase thresholds as a list.
-
-  ## Examples
-
-      iex> Locus.Fibonacci.phase_thresholds()
-      [144, 288, 576, 1008, 1728, 2880]
-  """
-  @spec phase_thresholds() :: [pos_integer()]
-  def phase_thresholds do
-    Enum.map(1..6, &phase_threshold/1)
-  end
-
-  @doc """
-  Determine the current phase index (1-6) based on blocks elapsed
-  since city founding.
-
-  ## Examples
-
-      iex> Locus.Fibonacci.current_phase_index(0)
-      0
-      iex> Locus.Fibonacci.current_phase_index(144)
+      iex> Fibonacci.sum_up_to(1)
       1
-      iex> Locus.Fibonacci.current_phase_index(3000)
-      6
+      
+      iex> Fibonacci.sum_up_to(5)
+      12  # 1+1+2+3+5
   """
-  @spec current_phase_index(non_neg_integer()) :: 0..6
-  def current_phase_index(blocks_elapsed) when blocks_elapsed < 0, do: 0
-
-  def current_phase_index(blocks_elapsed) do
-    thresholds = phase_thresholds()
-
-    thresholds
-    |> Enum.with_index(1)
-    |> Enum.reduce(0, fn {threshold, index}, acc ->
-      if blocks_elapsed >= threshold, do: index, else: acc
-    end)
-  end
-
+  @spec sum_up_to(non_neg_integer()) :: non_neg_integer()
+  def sum_up_to(n), do: sequence(n) |> Enum.sum()
+  
   @doc """
-  Calculate blocks remaining until the next phase unlock.
-
-  Returns `{:ok, blocks_remaining}` or `{:max_phase, 0}` if already
-  at Sovereign (phase 6).
+  Returns the number of /16 blocks unlocked for a given citizen count.
+  
+  Per spec 02-city-lifecycle.md table:
+  | Citizens | Blocks | Phase |
+  |----------|--------|-------|
+  | 1        | 2      | Genesis |
+  | 2-3      | 2      | Settlement |
+  | 4-8      | 5      | Village |
+  | 9-20     | 8      | Town |
+  | 21-50    | 16     | City |
+  | 51+      | 24     | Metropolis |
   """
-  @spec blocks_until_next_phase(non_neg_integer()) ::
-    {:ok, non_neg_integer()} | {:max_phase, 0}
-  def blocks_until_next_phase(blocks_elapsed) do
-    current = current_phase_index(blocks_elapsed)
-
-    if current >= 6 do
-      {:max_phase, 0}
-    else
-      next_threshold = phase_threshold(current + 1)
-      {:ok, max(0, next_threshold - blocks_elapsed)}
-    end
-  end
-
+  @spec blocks_for_citizens(non_neg_integer()) :: non_neg_integer()
+  def blocks_for_citizens(citizen_count) when citizen_count >= 51, do: 24
+  def blocks_for_citizens(citizen_count) when citizen_count >= 21, do: 16
+  def blocks_for_citizens(citizen_count) when citizen_count >= 9, do: 8
+  def blocks_for_citizens(citizen_count) when citizen_count >= 4, do: 5
+  def blocks_for_citizens(citizen_count) when citizen_count >= 1, do: 2
+  def blocks_for_citizens(_), do: 0
+  
   @doc """
-  Calculate the unlock block height for a given phase, relative to
-  a city's founding block height.
-
-  ## Examples
-
-      iex> Locus.Fibonacci.unlock_height(100_000, 3)
-      100_576
+  Returns the city phase based on citizen count.
+  
+  Per spec 02-city-lifecycle.md:
+  - Phase 0 Genesis: 1 citizen
+  - Phase 1 Settlement: 2-3 citizens  
+  - Phase 2 Village: 4-8 citizens
+  - Phase 3 Town: 9-20 citizens
+  - Phase 4 City: 21-50 citizens
+  - Phase 5 Metropolis: 51+ citizens
+  
+  NOTE: Phase 4 is called :city (not :thriving as in wrong implementation)
   """
-  @spec unlock_height(non_neg_integer(), 1..6) :: non_neg_integer()
-  def unlock_height(founded_at, phase) do
-    founded_at + phase_threshold(phase)
-  end
-
+  @spec phase_for_citizens(non_neg_integer()) :: atom()
+  def phase_for_citizens(citizen_count) when citizen_count >= 51, do: :metropolis
+  def phase_for_citizens(citizen_count) when citizen_count >= 21, do: :city
+  def phase_for_citizens(citizen_count) when citizen_count >= 9, do: :town
+  def phase_for_citizens(citizen_count) when citizen_count >= 4, do: :village
+  def phase_for_citizens(citizen_count) when citizen_count >= 2, do: :settlement
+  def phase_for_citizens(citizen_count) when citizen_count >= 1, do: :genesis
+  def phase_for_citizens(_), do: :none
+  
   @doc """
-  Get the configurable base block multiplier.
-  Default: 144 (~1 day of Bitcoin blocks at 10-min intervals).
+  Returns the governance type for a given phase.
+  
+  Per spec 02-city-lifecycle.md:
+  - Genesis/Settlement: Founder
+  - Village: Tribal Council
+  - Town: Republic
+  - City: Direct Democracy
+  - Metropolis: Senate
   """
-  @spec base_blocks() :: pos_integer()
-  def base_blocks do
-    Application.get_env(:locus_core, :fibonacci_base_blocks, 144)
-  end
+  @spec governance_for_phase(atom()) :: atom()
+  def governance_for_phase(:genesis), do: :founder
+  def governance_for_phase(:settlement), do: :founder
+  def governance_for_phase(:village), do: :tribal_council
+  def governance_for_phase(:town), do: :republic
+  def governance_for_phase(:city), do: :direct_democracy
+  def governance_for_phase(:metropolis), do: :senate
+  def governance_for_phase(_), do: :none
 end
