@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://locusprotocol.org/schemas/invocation.json",
+  "title": "Ghost Invocation Transaction",
+  "description": "Schema for Locus Protocol invocation OP_RETURN payload",
+  "type": "object",
+  "required": ["protocol", "version", "type", "ghost_id", "invocation_id", "fee_sats", "timestamp", "input_hash"],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "locus",
+      "description": "Protocol identifier"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Protocol version"
+    },
+    "type": {
+      "type": "string",
+      "const": "INVOCATION",
+      "description": "Transaction type"
+    },
+    "ghost_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Target ghost identifier"
+    },
+    "invocation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique UUID for this invocation"
+    },
+    "fee_sats": {
+      "type": "integer",
+      "minimum": 100,
+      "description": "Total fee paid for invocation"
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 1609459200,
+      "description": "Unix timestamp (seconds)"
+    },
+    "input_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of input parameters"
+    },
+    "response_address": {
+      "type": "string",
+      "pattern": "^(1|3|bc1)[a-zA-Z0-9]{25,62}$",
+      "description": "Optional BSV address for async response"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300,
+      "description": "User-specified timeout for this invocation"
+    },
+    "requested_priority": {
+      "type": "string",
+      "enum": ["LOW", "NORMAL", "HIGH"],
+      "default": "NORMAL",
+      "description": "Execution priority hint"
+    },
+    "client_info": {
+      "type": "object",
+      "properties": {
+        "client_version": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["ios", "android", "web", "cli"]
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

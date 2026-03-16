@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://locusprotocol.org/schemas/ghost-register.json",
+  "title": "Ghost Registration Transaction",
+  "description": "Schema for Locus Protocol ghost registration OP_RETURN payload",
+  "type": "object",
+  "required": ["protocol", "version", "type", "ghost_id", "name", "ghost_type", "location", "stake", "owner", "code_hash"],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "locus",
+      "description": "Protocol identifier"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Protocol version (semver)",
+      "examples": ["0.1.0", "1.0.0"]
+    },
+    "type": {
+      "type": "string",
+      "const": "GHOST_REGISTER",
+      "description": "Transaction type"
+    },
+    "ghost_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Unique 32-byte hex identifier (derived from registration tx)"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Human-readable ghost name"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Optional description of ghost functionality"
+    },
+    "ghost_type": {
+      "type": "string",
+      "enum": ["GREETER", "ORACLE", "GUARDIAN", "MERCHANT", "CUSTOM"],
+      "description": "Predefined ghost behavior type"
+    },
+    "location": {
+      "type": "object",
+      "required": ["lat", "lng", "h3_index", "h3_resolution"],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "Latitude in degrees"
+        },
+        "lng": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "description": "Longitude in degrees"
+        },
+        "h3_index": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{15}$",
+          "description": "H3 hexagon index (resolution 9)"
+        },
+        "h3_resolution": {
+          "type": "integer",
+          "const": 9,
+          "description": "H3 resolution (fixed at 9 for protocol)"
+        }
+      }
+    },
+    "stake": {
+      "type": "object",
+      "required": ["amount_sats", "lock_blocks", "unlock_height", "stake_txid"],
+      "properties": {
+        "amount_sats": {
+          "type": "integer",
+          "minimum": 1000000,
+          "description": "Staked amount in satoshis (min 0.01 BSV)"
+        },
+        "lock_blocks": {
+          "type": "integer",
+          "minimum": 21600,
+          "maximum": 52560,
+          "description": "Lock period in blocks (~5-12 months)"
+        },
+        "unlock_height": {
+          "type": "integer",
+          "description": "Block height when stake unlocks"
+        },
+        "stake_txid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Transaction ID of staking transaction"
+        }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "required": ["pubkey", "address"],
+      "properties": {
+        "pubkey": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{66}$",
+          "description": "33-byte compressed public key in hex"
+        },
+        "address": {
+          "type": "string",
+          "pattern": "^(1|3|bc1)[a-zA-Z0-9]{25,62}$",
+          "description": "BSV address (P2PKH or P2SH)"
+        }
+      }
+    },
+    "code_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of ghost execution code"
+    },
+    "code_uri": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 256,
+      "description": "Optional URI to fetch ghost code (IPFS, HTTPS)"
+    },
+    "fee_schedule": {
+      "type": "object",
+      "required": ["base_fee_sats", "timeout_seconds"],
+      "properties": {
+        "base_fee_sats": {
+          "type": "integer",
+          "minimum": 100,
+          "description": "Base fee per invocation"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "description": "Maximum execution time"
+        },
+        "variable_pricing": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether ghost supports dynamic pricing"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "description": "Optional key-value metadata (max 10 keys)"
+    }
+  },
+  "additionalProperties": false
+}

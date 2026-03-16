@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://locusprotocol.org/schemas/heartbeat.json",
+  "title": "Ghost Heartbeat Transaction",
+  "description": "Schema for Locus Protocol heartbeat OP_RETURN payload",
+  "type": "object",
+  "required": ["protocol", "version", "type", "ghost_id", "timestamp", "sequence", "location_hash"],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "locus",
+      "description": "Protocol identifier"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Protocol version"
+    },
+    "type": {
+      "type": "string",
+      "const": "HEARTBEAT",
+      "description": "Transaction type"
+    },
+    "ghost_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Ghost identifier"
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 1609459200,
+      "description": "Unix timestamp (seconds)"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Strictly incrementing heartbeat sequence number"
+    },
+    "location_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{15}$",
+      "description": "H3 hexagon index at resolution 9"
+    },
+    "status_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of compressed status data"
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "invocations_served_24h": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of invocations served in last 24 hours"
+        },
+        "avg_response_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Average response time in milliseconds"
+        },
+        "uptime_percentage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Self-reported uptime percentage"
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
