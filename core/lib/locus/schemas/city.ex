@@ -2,40 +2,56 @@ defmodule Locus.Schemas.City do
   @moduledoc """
   City schema — the primary primitive of the Locus Protocol.
 
-  ## Lifecycle Phases
+  Per spec 02-city-lifecycle.md:
 
-  Cities progress through 6 phases, each unlocked after a Fibonacci
-  number of block periods from the founding block:
+  ## Lifecycle Phases (driven by citizen count)
 
-      Phase 1 — Founded:       Fib(1) = 1   (city exists, founder only)
-      Phase 2 — Settled:       Fib(2) = 1   (first citizens join)
-      Phase 3 — Established:   Fib(3) = 2   (services begin)
-      Phase 4 — Thriving:      Fib(4) = 3   (treasury active, UBI starts)
-      Phase 5 — Metropolitan:  Fib(5) = 5   (multi-district expansion)
-      Phase 6 — Sovereign:     Fib(6) = 8   (full self-governance)
+      Phase 0 — Genesis:     1 citizen      (founder only)
+      Phase 1 — Settlement:  2-3 citizens   (hardcore mode)
+      Phase 2 — Village:     4-8 citizens   (tribal council, first blocks)
+      Phase 3 — Town:        9-20 citizens  (republic governance)
+      Phase 4 — City:        21-50 citizens (UBI ACTIVATED, direct democracy)
+      Phase 5 — Metropolis:  51+ citizens   (senate, full expansion)
 
-  Thresholds are Fib(N) × `fibonacci_base_blocks` (default 144 ≈ 1 day).
+  ## Token Distribution (3.2M per city)
+
+      Founder:      640,000 (20%) — 12-month linear vest
+      Treasury:   1,600,000 (50%) — UBI, grants, public goods
+      Public Sale:  800,000 (25%) — Immediate
+      Protocol Dev: 160,000 (5%)  — 24-month vest
   """
 
-  @phases [:founded, :settled, :established, :thriving, :metropolitan, :sovereign]
+  @phases [:genesis, :settlement, :village, :town, :city, :metropolis]
 
-  @type phase :: :founded | :settled | :established | :thriving | :metropolitan | :sovereign
-  @type governance_era :: :genesis | :federal
+  @total_token_supply 3_200_000
+  @founder_tokens     640_000
+  @treasury_tokens  1_600_000
+  @public_tokens      800_000
+  @dev_tokens         160_000
+  @founding_stake_sats 3_200_000_000  # 32 BSV
+
+  @type phase :: :genesis | :settlement | :village | :town | :city | :metropolis
 
   @type t :: %__MODULE__{
     id: binary(),
     name: String.t(),
+    description: String.t(),
     territory_id: binary(),
     founder_pubkey: binary(),
     founded_at: non_neg_integer(),
     phase: phase(),
-    phase_changed_at: non_neg_integer(),
     citizens: [binary()],
     citizen_count: non_neg_integer(),
-    treasury_balance: non_neg_integer(),
+    treasury_bsv: non_neg_integer(),
+    treasury_tokens: non_neg_integer(),
+    token_supply: non_neg_integer(),
+    founder_tokens_total: non_neg_integer(),
+    founder_tokens_vested: non_neg_integer(),
     territories: [binary()],
-    governance_era: governance_era(),
-    founding_txid: binary(),
+    blocks_unlocked: non_neg_integer(),
+    founding_txid: binary() | nil,
+    location: map(),
+    policies: map(),
     metadata: map()
   }
 
@@ -46,40 +62,27 @@ defmodule Locus.Schemas.City do
     :founder_pubkey,
     :founded_at,
     :founding_txid,
-    phase: :founded,
-    phase_changed_at: 0,
+    description: "",
+    phase: :genesis,
     citizens: [],
     citizen_count: 0,
-    treasury_balance: 0,
+    treasury_bsv: 0,
+    treasury_tokens: @treasury_tokens,
+    token_supply: @total_token_supply,
+    founder_tokens_total: @founder_tokens,
+    founder_tokens_vested: 0,
     territories: [],
-    governance_era: :genesis,
+    blocks_unlocked: 0,
+    location: %{},
+    policies: %{},
     metadata: %{}
   ]
 
   def phases, do: @phases
-
-  @doc "Index of a phase (1-based)"
-  def phase_index(:founded), do: 1
-  def phase_index(:settled), do: 2
-  def phase_index(:established), do: 3
-  def phase_index(:thriving), do: 4
-  def phase_index(:metropolitan), do: 5
-  def phase_index(:sovereign), do: 6
-
-  @doc "Phase from index (1-based)"
-  def phase_from_index(1), do: :founded
-  def phase_from_index(2), do: :settled
-  def phase_from_index(3), do: :established
-  def phase_from_index(4), do: :thriving
-  def phase_from_index(5), do: :metropolitan
-  def phase_from_index(6), do: :sovereign
-  def phase_from_index(_), do: nil
-
-  @doc "Next phase in the lifecycle, or nil if sovereign"
-  def next_phase(:founded), do: :settled
-  def next_phase(:settled), do: :established
-  def next_phase(:established), do: :thriving
-  def next_phase(:thriving), do: :metropolitan
-  def next_phase(:metropolitan), do: :sovereign
-  def next_phase(:sovereign), do: nil
+  def total_token_supply, do: @total_token_supply
+  def founder_token_allocation, do: @founder_tokens
+  def treasury_token_allocation, do: @treasury_tokens
+  def public_token_allocation, do: @public_tokens
+  def dev_token_allocation, do: @dev_tokens
+  def founding_stake_sats, do: @founding_stake_sats
 end

@@ -2,94 +2,100 @@ defmodule Locus.City do
   @moduledoc """
   City lifecycle management — the primary primitive of Locus Protocol.
 
-  Cities are founded on territories, progress through 6 Fibonacci-gated
-  phases, and manage citizens who stake BSV to participate.
+  Per spec 02-city-lifecycle.md:
+  - Cities progress through 6 phases driven by CITIZEN COUNT
+  - Phases: genesis → settlement → village → town → city → metropolis
+  - Fibonacci sequence governs /16 block unlocking
+  - UBI activates at Phase 4 (city, 21+ citizens)
+  - Founding stake: 32 BSV (CLTV locked 21,600 blocks)
+  - Token supply: 3.2M per city
 
-  ## Founding
-
-  A city is founded by locking BSV to a territory via a CLTV-locked
-  stake transaction. The founder becomes the first citizen and the
-  city enters the Genesis governance era.
-
-  ## Phase Progression
-
-  Phase transitions are checked against block height using Fibonacci
-  unlock calculations. Each phase enables new capabilities:
-
-      Founded      → City exists, founder can claim territories
-      Settled      → Citizens can join
-      Established  → Basic governance
-      Thriving     → Treasury active, UBI distribution begins
-      Metropolitan → Multi-district expansion enabled
-      Sovereign    → Full Federal governance, self-sovereignty
+  Phase transitions happen automatically when citizen count crosses
+  thresholds. Governance type evolves with each phase.
   """
 
   alias Locus.Schemas.{City, Citizen}
-  alias Locus.{Fibonacci, Territory}
+  alias Locus.Fibonacci
+
+  @founding_stake 3_200_000_000  # 32 BSV in satoshis
+  @lock_period 21_600            # blocks (~5 months)
 
   @doc """
-  Found a new city on a territory.
+  Found a new city.
 
-  Returns `{:ok, city, citizen}` with the founder as the first citizen.
+  Per spec 02-city-lifecycle.md:
+  1. Stake 32 BSV with 21,600-block CLTV lock
+  2. Specify city name, description, location
+  3. Founder receives 20% tokens (640,000) on 12-month vest
+  4. City treasury receives 50% tokens (1,600,000)
 
-  ## Parameters
-
-    - `name` — City name
-    - `territory_id` — Geo-IPv6 address of founding territory
-    - `founder_pubkey` — Founder's public key
-    - `block_height` — Current block height
-    - `opts` — Optional: `:stake_amount`, `:stake_txid`, `:metadata`
+  Returns `{:ok, city, founder_citizen}`.
   """
-  @spec found(String.t(), binary(), binary(), non_neg_integer(), keyword()) ::
+  @spec found(String.t(), map(), binary(), non_neg_integer(), keyword()) ::
     {:ok, City.t(), Citizen.t()} | {:error, atom()}
-  def found(name, territory_id, founder_pubkey, block_height, opts \\ []) do
-    stake_amount = Keyword.get(opts, :stake_amount, 0)
+  def found(name, location, founder_pubkey, block_height, opts \\ []) do
+    stake_amount = Keyword.get(opts, :stake_amount, @founding_stake)
     stake_txid = Keyword.get(opts, :stake_txid)
-    metadata = Keyword.get(opts, :metadata, %{})
+    description = Keyword.get(opts, :description, "")
+    policies = Keyword.get(opts, :policies, %{})
 
-    min_stake = Application.get_env(:locus_core, :min_founding_stake, 1_000_000)
+    cond do
+      stake_amount < @founding_stake ->
+        {:error, :insufficient_stake}
 
-    if stake_amount < min_stake do
-      {:error, :insufficient_stake}
-    else
-      city_id = derive_city_id(territory_id, founder_pubkey, block_height)
+      byte_size(name) > 50 ->
+        {:error, :name_too_long}
 
-      city = %City{
-        id: city_id,
-        name: name,
-        territory_id: territory_id,
-        founder_pubkey: founder_pubkey,
-        founded_at: block_height,
-        founding_txid: stake_txid,
-        phase: :founded,
-        phase_changed_at: block_height,
-        citizens: [founder_pubkey],
-        citizen_count: 1,
-        treasury_balance: 0,
-        territories: [territory_id],
-        governance_era: :genesis,
-        metadata: metadata
-      }
+      true ->
+        territory_id = derive_territory_id(location, founder_pubkey)
+        city_id = derive_city_id(territory_id, founder_pubkey, block_height)
 
-      founder = %Citizen{
-        pubkey: founder_pubkey,
-        city_id: city_id,
-        joined_at: block_height,
-        stake_amount: stake_amount,
-        stake_txid: stake_txid,
-        lock_height: block_height + lock_period(),
-        status: :active
-      }
+        city = %City{
+          id: city_id,
+          name: name,
+          description: description,
+          territory_id: territory_id,
+          founder_pubkey: founder_pubkey,
+          founded_at: block_height,
+          founding_txid: stake_txid,
+          phase: :genesis,
+          citizens: [founder_pubkey],
+          citizen_count: 1,
+          treasury_bsv: stake_amount,
+          treasury_tokens: City.treasury_token_allocation(),
+          token_supply: City.total_token_supply(),
+          founder_tokens_total: City.founder_token_allocation(),
+          founder_tokens_vested: 0,
+          territories: [territory_id],
+          blocks_unlocked: Fibonacci.blocks_for_citizens(1),
+          location: location,
+          policies: policies
+        }
 
-      {:ok, city, founder}
+        founder = %Citizen{
+          pubkey: founder_pubkey,
+          city_id: city_id,
+          joined_at: block_height,
+          stake_amount: stake_amount,
+          stake_txid: stake_txid,
+          lock_height: block_height + @lock_period,
+          token_balance: 0,
+          status: :active
+        }
+
+        {:ok, city, founder}
     end
   end
 
   @doc """
   Add a citizen to a city.
 
-  The city must be at least in the Settled phase (phase 2+).
-  Returns `{:ok, updated_city, citizen}` or `{:error, reason}`.
+  Per spec 02-city-lifecycle.md:
+  - Anyone can join (if immigration_policy = "open")
+  - Joining may trigger phase transition based on new citizen count
+  - New blocks may unlock via Fibonacci
+
+  Returns `{:ok, updated_city, citizen}`.
   """
   @spec add_citizen(City.t(), binary(), non_neg_integer(), keyword()) ::
     {:ok, City.t(), Citizen.t()} | {:error, atom()}
@@ -98,26 +104,27 @@ defmodule Locus.City do
     stake_txid = Keyword.get(opts, :stake_txid)
 
     cond do
-      City.phase_index(city.phase) < 2 ->
-        {:error, :city_not_settled}
-
       citizen_pubkey in city.citizens ->
         {:error, :already_citizen}
 
       true ->
+        new_count = city.citizen_count + 1
+
         citizen = %Citizen{
           pubkey: citizen_pubkey,
           city_id: city.id,
           joined_at: block_height,
           stake_amount: stake_amount,
           stake_txid: stake_txid,
-          lock_height: block_height + lock_period(),
+          lock_height: block_height + @lock_period,
           status: :active
         }
 
         updated_city = %{city |
           citizens: [citizen_pubkey | city.citizens],
-          citizen_count: city.citizen_count + 1
+          citizen_count: new_count,
+          phase: Fibonacci.phase_for_citizens(new_count),
+          blocks_unlocked: Fibonacci.blocks_for_citizens(new_count)
         }
 
         {:ok, updated_city, citizen}
@@ -126,10 +133,16 @@ defmodule Locus.City do
 
   @doc """
   Remove a citizen from a city. Cannot remove the founder.
+
+  Per spec 02-city-lifecycle.md:
+  - City dies if citizen count drops to 0
+  - Phase may revert if citizen count drops below threshold
   """
   @spec remove_citizen(City.t(), binary(), binary()) ::
     {:ok, City.t()} | {:error, atom()}
   def remove_citizen(%City{} = city, citizen_pubkey, requester_pubkey) do
+    governance = Fibonacci.governance_for_phase(city.phase)
+
     cond do
       citizen_pubkey == city.founder_pubkey ->
         {:error, :cannot_remove_founder}
@@ -138,85 +151,65 @@ defmodule Locus.City do
         {:error, :not_citizen}
 
       requester_pubkey != citizen_pubkey and
-        requester_pubkey != city.founder_pubkey and
-        city.governance_era == :genesis ->
+        governance == :founder and
+        requester_pubkey != city.founder_pubkey ->
         {:error, :unauthorized}
 
       true ->
+        new_count = city.citizen_count - 1
+
+        # Per spec: once unlocked, blocks stay unlocked (no reverse)
+        # But phase CAN drop based on current citizen count
+        new_phase = Fibonacci.phase_for_citizens(new_count)
+
         updated_city = %{city |
           citizens: List.delete(city.citizens, citizen_pubkey),
-          citizen_count: city.citizen_count - 1
+          citizen_count: new_count,
+          phase: new_phase
+          # blocks_unlocked stays the same (no reverse per spec)
         }
         {:ok, updated_city}
     end
   end
 
   @doc """
-  Check if a city is eligible for the next phase transition.
+  Calculate vested founder tokens.
 
-  Returns `{:ok, next_phase}` or `{:error, reason}`.
+  Per spec 02-city-lifecycle.md:
+  - 640,000 tokens (20%) vest linearly over 12 months
+  - 1/12th unlocks each month (~4,320 blocks per month at 144/day)
+
+  Returns number of tokens vested so far.
   """
-  @spec check_phase_transition(City.t(), non_neg_integer()) ::
-    {:ok, atom()} | {:error, atom()}
-  def check_phase_transition(%City{} = city, current_height) do
-    next = City.next_phase(city.phase)
-
-    cond do
-      next == nil ->
-        {:error, :already_sovereign}
-
-      true ->
-        blocks_elapsed = current_height - city.founded_at
-        next_index = City.phase_index(next)
-        required = Fibonacci.phase_threshold(next_index)
-
-        if blocks_elapsed >= required do
-          {:ok, next}
-        else
-          {:error, :not_enough_blocks}
-        end
-    end
+  @spec founder_vested_tokens(City.t(), non_neg_integer()) :: non_neg_integer()
+  def founder_vested_tokens(%City{} = city, current_height) do
+    blocks_per_month = 144 * 30  # ~4,320 blocks
+    blocks_elapsed = max(0, current_height - city.founded_at)
+    months_elapsed = min(12, div(blocks_elapsed, blocks_per_month))
+    div(city.founder_tokens_total * months_elapsed, 12)
   end
 
   @doc """
-  Advance a city to the next phase if eligible.
+  Check if UBI is active for this city.
 
-  Returns `{:ok, updated_city}` or `{:error, reason}`.
+  Per spec 02-city-lifecycle.md:
+  UBI activates at Phase 4 (:city) with 21+ citizens.
   """
-  @spec advance_phase(City.t(), non_neg_integer()) ::
-    {:ok, City.t()} | {:error, atom()}
-  def advance_phase(%City{} = city, current_height) do
-    case check_phase_transition(city, current_height) do
-      {:ok, next_phase} ->
-        updated = %{city |
-          phase: next_phase,
-          phase_changed_at: current_height
-        }
-        {:ok, updated}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  @spec ubi_active?(City.t()) :: boolean()
+  def ubi_active?(%City{} = city) do
+    city.phase in [:city, :metropolis]
   end
 
   @doc """
-  Advance a city through all eligible phases at once.
-
-  Useful when catching up after many blocks have passed.
+  Get the governance type for this city's current phase.
   """
-  @spec advance_all_phases(City.t(), non_neg_integer()) :: City.t()
-  def advance_all_phases(%City{} = city, current_height) do
-    case advance_phase(city, current_height) do
-      {:ok, updated} -> advance_all_phases(updated, current_height)
-      {:error, _} -> city
-    end
+  @spec governance_type(City.t()) :: atom()
+  def governance_type(%City{} = city) do
+    Fibonacci.governance_for_phase(city.phase)
   end
 
   @doc """
-  Claim a new territory for the city.
-
-  The claiming citizen pays progressive tax based on how many
-  territories they already hold.
+  Claim a territory for the city.
   """
   @spec claim_territory(City.t(), binary(), binary()) ::
     {:ok, City.t()} | {:error, atom()}
@@ -229,41 +222,21 @@ defmodule Locus.City do
         {:error, :already_claimed}
 
       true ->
-        updated = %{city |
-          territories: [territory_id | city.territories]
-        }
-        {:ok, updated}
+        {:ok, %{city | territories: [territory_id | city.territories]}}
     end
   end
 
   @doc """
-  Get the block height at which a specific phase unlocks for this city.
+  Check city death conditions.
+
+  Per spec 02-city-lifecycle.md, a city dies if:
+  1. Citizen count drops to 0
+  2. Founder heartbeat expires (12 months)
+  3. Unanimous dissolution vote
   """
-  @spec phase_unlock_height(City.t(), City.phase()) :: non_neg_integer()
-  def phase_unlock_height(%City{} = city, phase) do
-    phase_index = City.phase_index(phase)
-    Fibonacci.unlock_height(city.founded_at, phase_index)
-  end
-
-  @doc """
-  Check if city should transition from Genesis to Federal governance era.
-
-  Transition happens when citizen_count >= federal_transition_citizens (default 21).
-  """
-  @spec check_federal_transition(City.t()) :: {:ok, City.t()} | {:error, atom()}
-  def check_federal_transition(%City{governance_era: :federal} = city) do
-    {:error, :already_federal}
-  end
-
-  def check_federal_transition(%City{} = city) do
-    threshold = Application.get_env(:locus_core, :federal_transition_citizens, 21)
-
-    if city.citizen_count >= threshold do
-      {:ok, %{city | governance_era: :federal}}
-    else
-      {:error, :insufficient_citizens}
-    end
-  end
+  @spec dead?(City.t()) :: boolean()
+  def dead?(%City{citizen_count: 0}), do: true
+  def dead?(_city), do: false
 
   @doc "Derive a unique city ID from founding parameters."
   @spec derive_city_id(binary(), binary(), non_neg_integer()) :: binary()
@@ -272,7 +245,11 @@ defmodule Locus.City do
     :crypto.hash(:sha256, data)
   end
 
-  defp lock_period do
-    Application.get_env(:locus_core, :lock_period_blocks, 21_600)
+  defp derive_territory_id(location, founder_pubkey) do
+    h3 = Map.get(location, :h3_res7) || Map.get(location, "h3_res7", "")
+    lat = Map.get(location, :lat) || Map.get(location, "lat", 0)
+    lng = Map.get(location, :lng) || Map.get(location, "lng", 0)
+    data = "#{h3}:#{lat}:#{lng}" <> founder_pubkey
+    :crypto.hash(:sha256, data)
   end
 end

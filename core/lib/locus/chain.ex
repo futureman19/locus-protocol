@@ -2,17 +2,16 @@ defmodule Locus.Chain do
   @moduledoc """
   BSV blockchain interaction for the territory-centric protocol.
 
-  Handles:
-  - Broadcasting transactions via ARC (GorillaPool / TAAL)
-  - Querying block height
-  - Scanning blocks for territory protocol transactions
-  - Parsing OP_RETURN outputs for protocol data
+  Per spec 07-transaction-formats.md:
+  - All protocol state recorded as BSV transactions
+  - OP_RETURN outputs with "LOCUS" prefix
+  - CLTV locks for territory stakes
+  - ARC for transaction broadcasting
 
-  All state is derived from chain — no database.
+  ## All state derives from chain — no database.
   """
 
   use GenServer
-
   require Logger
 
   alias BSV.ARC.Client, as: ARCClient
@@ -71,7 +70,6 @@ defmodule Locus.Chain do
   end
 
   @doc "Broadcast a Transaction struct."
-  @spec broadcast(Transaction.t()) :: {:ok, map()} | {:error, term()}
   def broadcast(%Transaction{} = tx) do
     tx
     |> Transaction.to_binary()
@@ -79,7 +77,7 @@ defmodule Locus.Chain do
     |> broadcast()
   end
 
-  @doc "Scan a range of blocks for territory protocol transactions."
+  @doc "Scan a range of blocks for Locus Protocol transactions."
   @spec scan_range(non_neg_integer(), non_neg_integer()) ::
     {:ok, [map()]} | {:error, term()}
   def scan_range(start_height, end_height) do
@@ -93,9 +91,9 @@ defmodule Locus.Chain do
   end
 
   @doc """
-  Parse a raw transaction hex for territory protocol data.
+  Parse a raw transaction for Locus Protocol data.
 
-  Scans all outputs for OP_RETURN data matching the Locus Protocol prefix.
+  Scans outputs for OP_RETURN starting with "LOCUS" prefix.
   """
   @spec parse_transaction(binary()) :: {:ok, map()} | {:error, atom()}
   def parse_transaction(tx_hex) when is_binary(tx_hex) do
@@ -116,10 +114,12 @@ defmodule Locus.Chain do
   end
 
   @doc """
-  Build a complete transaction with OP_RETURN output.
+  Build a complete transaction with OP_RETURN output and optional stake.
 
-  Combines a CLTV-locked stake output (if applicable) with the
-  protocol OP_RETURN output and optional change.
+  Combines:
+  1. P2SH stake output (CLTV locked, if applicable)
+  2. OP_RETURN with protocol data
+  3. P2PKH change output
   """
   @spec build_transaction(keyword()) :: {:ok, map()} | {:error, atom()}
   def build_transaction(opts) do
@@ -132,9 +132,8 @@ defmodule Locus.Chain do
     case Locus.Transaction.encode(type, payload) do
       {:ok, op_return_script} ->
         outputs = build_outputs(op_return_script, stake_output)
-
-        # Calculate fee and change
         fee = estimate_fee(outputs)
+
         input_amount = funding_utxo.satoshis
         output_amount = Enum.reduce(outputs, 0, fn o, acc -> acc + o.satoshis end)
         change = input_amount - output_amount - fee
@@ -146,7 +145,7 @@ defmodule Locus.Chain do
         end
 
         tx = %{
-          version: 1,
+          version: 2,
           inputs: [%{
             txid: funding_utxo.txid,
             vout: funding_utxo.vout,
@@ -162,6 +161,19 @@ defmodule Locus.Chain do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @doc """
+  Estimate transaction fee in satoshis.
+
+  Per spec 03-staking-economics.md:
+  Standard ~250 bytes @ ~0.5 sat/byte.
+  """
+  @spec estimate_fee(list()) :: non_neg_integer()
+  def estimate_fee(outputs) do
+    base = 150
+    output_bytes = length(outputs) * 34
+    base + output_bytes
   end
 
   # ---------------------------------------------------------------------------
@@ -191,7 +203,7 @@ defmodule Locus.Chain do
 
   @impl true
   def handle_call({:scan_range, start_height, end_height}, _from, state) do
-    Logger.info("Scanning blocks #{start_height} to #{end_height} for territory txs")
+    Logger.info("Scanning blocks #{start_height}..#{end_height} for LOCUS txs")
 
     transactions =
       start_height..end_height
@@ -220,13 +232,13 @@ defmodule Locus.Chain do
   defp default_arc_endpoint(_), do: "https://arc.gorillapool.io"
 
   defp query_arc_height(_client) do
-    # Placeholder — would use JungleBus or block explorer API
+    # Placeholder — production would use JungleBus or block explorer
     {:ok, 0}
   end
 
   defp scan_block(_height, _state) do
-    # Placeholder — would fetch block via JungleBus and filter for
-    # Locus Protocol OP_RETURN outputs
+    # Placeholder — production would fetch block via JungleBus
+    # and filter for OP_RETURN outputs starting with "LOCUS"
     {:ok, []}
   end
 
@@ -250,12 +262,5 @@ defmodule Locus.Chain do
       %{satoshis: stake_output.satoshis, locking_script: stake_output.locking_script},
       %{satoshis: 0, locking_script: op_return_script}
     ]
-  end
-
-  defp estimate_fee(outputs) do
-    # ~1 sat/byte, estimate ~150 bytes base + 34 bytes per output
-    base = 150
-    output_bytes = length(outputs) * 34
-    base + output_bytes
   end
 end

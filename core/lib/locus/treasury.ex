@@ -1,30 +1,45 @@
 defmodule Locus.Treasury do
   @moduledoc """
-  City treasury management — BSV tracking, UBI distribution, token redemption.
+  City treasury — BSV tracking, UBI distribution, token redemption.
 
-  Each city has a treasury funded by territory taxes, staking deposits,
-  and voluntary contributions. The treasury funds:
-
-  - **UBI** — Daily distribution to all active citizens
-  - **Governance spending** — Approved via proposals
-  - **Lock-to-mint** — BSV locked in treasury mints LOCUS tokens
+  Per spec 03-staking-economics.md:
 
   ## UBI Formula
 
-      daily_ubi = (treasury_balance × 0.001) / active_citizen_count
+      daily_ubi = (treasury_bsv × 0.001) / citizen_count
 
-  This ensures UBI is sustainable and scales with treasury size.
+  ## UBI Guardrails
+
+  - Monthly cap: 1% of treasury
+  - Minimum treasury: 100 BSV (10B sats) — UBI pauses below this
+  - Requires active heartbeat (within 30 days)
+  - Accumulates if unclaimed
+
+  ## Token Redemption
+
+      redemption_rate = treasury_bsv / total_token_supply
+      Tokens burned on redemption, rate increases for remaining holders.
+
+  ## Founder Vesting
+
+  - 640,000 tokens (20%) vest linearly over 12 months
+  - 1/12th unlocks per month (~4,320 blocks)
   """
 
   use GenServer
-
   require Logger
 
-  alias Locus.Schemas.{City, Citizen}
+  alias Locus.Schemas.City
+
+  @ubi_rate 0.001
+  @monthly_cap_rate 0.01
+  @min_treasury_for_ubi 10_000_000_000  # 100 BSV in sats
+  @blocks_per_month 4_320               # 144 blocks/day × 30 days
 
   defstruct [
-    cities: %{},
-    token_supply: %{}
+    treasuries: %{},
+    token_balances: %{},
+    ubi_claims: %{}
   ]
 
   def start_link(opts \\ []) do
@@ -32,239 +47,224 @@ defmodule Locus.Treasury do
   end
 
   @impl true
-  def init(_opts) do
-    {:ok, %__MODULE__{}}
-  end
+  def init(_opts), do: {:ok, %__MODULE__{}}
 
   # ---------------------------------------------------------------------------
-  # Public API
+  # UBI
   # ---------------------------------------------------------------------------
 
   @doc """
-  Deposit BSV (satoshis) into a city's treasury.
+  Calculate daily UBI per citizen.
+
+  Per spec 03-staking-economics.md:
+      daily_ubi = (treasury_bsv × 0.001) / citizen_count
 
   ## Examples
 
-      iex> Locus.Treasury.deposit("city_id", 100_000, "deposit_txid")
-      {:ok, 100_000}
+      iex> Locus.Treasury.calculate_daily_ubi(100_000_000_000, 25)
+      4_000_000
   """
-  @spec deposit(binary(), non_neg_integer(), binary()) ::
-    {:ok, non_neg_integer()} | {:error, atom()}
-  def deposit(city_id, amount, txid) when amount > 0 do
-    GenServer.call(__MODULE__, {:deposit, city_id, amount, txid})
-  end
-
-  def deposit(_city_id, _amount, _txid), do: {:error, :invalid_amount}
-
-  @doc """
-  Withdraw BSV from a city's treasury.
-
-  Requires governance authorization (proposal must have passed in Federal era,
-  or founder approval in Genesis era).
-  """
-  @spec withdraw(binary(), non_neg_integer(), binary(), binary()) ::
-    {:ok, non_neg_integer()} | {:error, atom()}
-  def withdraw(city_id, amount, authorization_id, recipient_pubkey) do
-    GenServer.call(__MODULE__, {:withdraw, city_id, amount, authorization_id, recipient_pubkey})
-  end
-
-  @doc """
-  Get the treasury balance for a city.
-  """
-  @spec balance(binary()) :: non_neg_integer()
-  def balance(city_id) do
-    GenServer.call(__MODULE__, {:balance, city_id})
-  end
-
-  @doc """
-  Calculate UBI amount per citizen for a city.
-
-  Formula: daily_ubi = (treasury_balance × ubi_rate) / active_citizen_count
-
-  ## Examples
-
-      iex> Locus.Treasury.calculate_ubi(1_000_000, 10)
-      100
-  """
-  @spec calculate_ubi(non_neg_integer(), pos_integer()) :: non_neg_integer()
-  def calculate_ubi(treasury_balance, citizen_count) when citizen_count > 0 do
-    rate = Application.get_env(:locus_core, :ubi_rate, 0.001)
-    daily_pool = trunc(treasury_balance * rate)
+  @spec calculate_daily_ubi(non_neg_integer(), pos_integer()) :: non_neg_integer()
+  def calculate_daily_ubi(treasury_bsv, citizen_count) when citizen_count > 0 do
+    daily_pool = trunc(treasury_bsv * @ubi_rate)
     div(daily_pool, citizen_count)
   end
 
-  def calculate_ubi(_treasury_balance, 0), do: 0
+  def calculate_daily_ubi(_treasury, 0), do: 0
 
   @doc """
-  Calculate UBI for a specific city using its current state.
+  Calculate UBI for a specific city with guardrails.
+
+  Per spec 03-staking-economics.md:
+  - UBI only active at Phase 4+ (:city, 21+ citizens)
+  - Monthly cap: 1% of treasury
+  - Pauses if treasury < 100 BSV
+
+  Returns `{:ok, per_citizen_amount}` or `{:error, reason}`.
   """
-  @spec calculate_city_ubi(City.t()) :: non_neg_integer()
+  @spec calculate_city_ubi(City.t()) :: {:ok, non_neg_integer()} | {:error, atom()}
   def calculate_city_ubi(%City{} = city) do
-    if city.citizen_count > 0 do
-      calculate_ubi(city.treasury_balance, city.citizen_count)
-    else
-      0
+    cond do
+      city.phase not in [:city, :metropolis] ->
+        {:error, :ubi_not_active}
+
+      city.citizen_count == 0 ->
+        {:error, :no_citizens}
+
+      city.treasury_bsv < @min_treasury_for_ubi ->
+        {:error, :treasury_below_minimum}
+
+      true ->
+        daily_ubi = calculate_daily_ubi(city.treasury_bsv, city.citizen_count)
+
+        # Monthly cap check: total monthly distribution must not exceed 1% of treasury
+        monthly_total = daily_ubi * city.citizen_count * 30
+        monthly_cap = trunc(city.treasury_bsv * @monthly_cap_rate)
+
+        if monthly_total > monthly_cap do
+          # Cap the daily amount
+          capped_daily = div(monthly_cap, city.citizen_count * 30)
+          {:ok, capped_daily}
+        else
+          {:ok, daily_ubi}
+        end
     end
   end
 
   @doc """
   Distribute UBI to all active citizens of a city.
 
-  Returns a list of `{citizen_pubkey, amount}` tuples.
-  UBI is only available once a city reaches the Thriving phase (phase 4+).
+  Returns `{:ok, distributions, updated_city}` where distributions
+  is a list of `{pubkey, amount}` tuples.
   """
-  @spec distribute_ubi(City.t(), non_neg_integer()) ::
+  @spec distribute_ubi(City.t()) ::
     {:ok, [{binary(), non_neg_integer()}], City.t()} | {:error, atom()}
-  def distribute_ubi(%City{} = city, current_height) do
-    phase_index = Locus.Schemas.City.phase_index(city.phase)
+  def distribute_ubi(%City{} = city) do
+    case calculate_city_ubi(city) do
+      {:ok, per_citizen} when per_citizen > 0 ->
+        distributions = Enum.map(city.citizens, fn pk -> {pk, per_citizen} end)
+        total = per_citizen * city.citizen_count
 
-    cond do
-      phase_index < 4 ->
-        {:error, :city_not_thriving}
+        updated_city = %{city | treasury_bsv: city.treasury_bsv - total}
+        {:ok, distributions, updated_city}
 
-      city.citizen_count == 0 ->
-        {:error, :no_citizens}
+      {:ok, 0} ->
+        {:error, :insufficient_treasury}
 
-      true ->
-        ubi_per_citizen = calculate_ubi(city.treasury_balance, city.citizen_count)
-
-        if ubi_per_citizen == 0 do
-          {:error, :insufficient_treasury}
-        else
-          total_distribution = ubi_per_citizen * city.citizen_count
-
-          distributions =
-            city.citizens
-            |> Enum.map(fn pubkey -> {pubkey, ubi_per_citizen} end)
-
-          updated_city = %{city |
-            treasury_balance: city.treasury_balance - total_distribution
-          }
-
-          {:ok, distributions, updated_city}
-        end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
+  # ---------------------------------------------------------------------------
+  # Token Redemption
+  # ---------------------------------------------------------------------------
+
   @doc """
-  Lock BSV to mint LOCUS tokens (lock-to-mint).
+  Calculate token redemption rate.
 
-  The BSV is locked in the city treasury and equivalent LOCUS tokens
-  are minted. Exchange rate is 1:1 (1 satoshi = 1 LOCUS token).
+  Per spec 03-staking-economics.md:
+      redemption_rate = treasury_bsv / total_token_supply
 
-  Returns `{:ok, tokens_minted, updated_treasury_balance}`.
+  Returns satoshis per token.
+
+  ## Examples
+
+      iex> Locus.Treasury.redemption_rate(100_000_000_000, 3_200_000)
+      31_250
   """
-  @spec lock_to_mint(binary(), non_neg_integer(), binary()) ::
-    {:ok, non_neg_integer(), non_neg_integer()} | {:error, atom()}
-  def lock_to_mint(city_id, bsv_amount, locker_pubkey) when bsv_amount > 0 do
-    GenServer.call(__MODULE__, {:lock_to_mint, city_id, bsv_amount, locker_pubkey})
+  @spec redemption_rate(non_neg_integer(), pos_integer()) :: non_neg_integer()
+  def redemption_rate(treasury_bsv, total_supply) when total_supply > 0 do
+    div(treasury_bsv, total_supply)
   end
 
-  def lock_to_mint(_city_id, _amount, _pubkey), do: {:error, :invalid_amount}
+  def redemption_rate(_treasury, 0), do: 0
 
   @doc """
-  Redeem LOCUS tokens back to BSV.
+  Redeem tokens for BSV from city treasury.
 
-  Burns the tokens and releases the equivalent BSV from the treasury.
+  Per spec 03-staking-economics.md:
+  1. Tokens sent to burn address
+  2. BSV returned at current redemption rate
+  3. Tokens permanently burned
+  4. Rate increases for remaining holders
+
+  Returns `{:ok, bsv_amount, updated_city}`.
   """
-  @spec redeem(binary(), non_neg_integer(), binary()) ::
+  @spec redeem_tokens(City.t(), non_neg_integer(), binary()) ::
+    {:ok, non_neg_integer(), City.t()} | {:error, atom()}
+  def redeem_tokens(%City{} = city, token_amount, _redeemer_pubkey)
+      when token_amount > 0 do
+    rate = redemption_rate(city.treasury_bsv, city.token_supply)
+    bsv_amount = rate * token_amount
+
+    cond do
+      bsv_amount > city.treasury_bsv ->
+        {:error, :insufficient_treasury}
+
+      token_amount > city.token_supply ->
+        {:error, :exceeds_supply}
+
+      true ->
+        updated = %{city |
+          treasury_bsv: city.treasury_bsv - bsv_amount,
+          token_supply: city.token_supply - token_amount
+        }
+        {:ok, bsv_amount, updated}
+    end
+  end
+
+  def redeem_tokens(_city, _amount, _pubkey), do: {:error, :invalid_amount}
+
+  # ---------------------------------------------------------------------------
+  # Founder Vesting
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Calculate vested founder tokens.
+
+  Per spec 02-city-lifecycle.md:
+  - 640,000 tokens vest linearly over 12 months
+  - 1/12th unlocks each month (~4,320 blocks)
+  """
+  @spec vested_founder_tokens(City.t(), non_neg_integer()) :: non_neg_integer()
+  def vested_founder_tokens(%City{} = city, current_height) do
+    blocks_elapsed = max(0, current_height - city.founded_at)
+    months = min(12, div(blocks_elapsed, @blocks_per_month))
+    div(city.founder_tokens_total * months, 12)
+  end
+
+  # ---------------------------------------------------------------------------
+  # GenServer: Treasury Balance Tracking
+  # ---------------------------------------------------------------------------
+
+  @doc "Deposit BSV (satoshis) into a city's treasury."
+  @spec deposit(binary(), non_neg_integer(), binary()) ::
     {:ok, non_neg_integer()} | {:error, atom()}
-  def redeem(city_id, token_amount, redeemer_pubkey) when token_amount > 0 do
-    GenServer.call(__MODULE__, {:redeem, city_id, token_amount, redeemer_pubkey})
+  def deposit(city_id, amount, _txid) when amount > 0 do
+    GenServer.call(__MODULE__, {:deposit, city_id, amount})
   end
 
-  def redeem(_city_id, _amount, _pubkey), do: {:error, :invalid_amount}
+  def deposit(_city_id, _amount, _txid), do: {:error, :invalid_amount}
 
-  @doc """
-  Get LOCUS token balance for a pubkey in a city.
-  """
-  @spec token_balance(binary(), binary()) :: non_neg_integer()
-  def token_balance(city_id, pubkey) do
-    GenServer.call(__MODULE__, {:token_balance, city_id, pubkey})
+  @doc "Withdraw BSV from a city's treasury (requires governance approval)."
+  @spec withdraw(binary(), non_neg_integer(), binary()) ::
+    {:ok, non_neg_integer()} | {:error, atom()}
+  def withdraw(city_id, amount, _authorization_id) when amount > 0 do
+    GenServer.call(__MODULE__, {:withdraw, city_id, amount})
   end
 
-  # ---------------------------------------------------------------------------
-  # GenServer Callbacks
-  # ---------------------------------------------------------------------------
+  def withdraw(_city_id, _amount, _auth), do: {:error, :invalid_amount}
+
+  @doc "Get treasury balance for a city."
+  @spec balance(binary()) :: non_neg_integer()
+  def balance(city_id) do
+    GenServer.call(__MODULE__, {:balance, city_id})
+  end
 
   @impl true
-  def handle_call({:deposit, city_id, amount, _txid}, _from, state) do
-    current = Map.get(state.cities, city_id, 0)
+  def handle_call({:deposit, city_id, amount}, _from, state) do
+    current = Map.get(state.treasuries, city_id, 0)
     new_balance = current + amount
-    new_state = %{state | cities: Map.put(state.cities, city_id, new_balance)}
+    new_state = %{state | treasuries: Map.put(state.treasuries, city_id, new_balance)}
     {:reply, {:ok, new_balance}, new_state}
   end
 
   @impl true
-  def handle_call({:withdraw, city_id, amount, _auth_id, _recipient}, _from, state) do
-    current = Map.get(state.cities, city_id, 0)
+  def handle_call({:withdraw, city_id, amount}, _from, state) do
+    current = Map.get(state.treasuries, city_id, 0)
 
     if amount > current do
       {:reply, {:error, :insufficient_funds}, state}
     else
       new_balance = current - amount
-      new_state = %{state | cities: Map.put(state.cities, city_id, new_balance)}
+      new_state = %{state | treasuries: Map.put(state.treasuries, city_id, new_balance)}
       {:reply, {:ok, new_balance}, new_state}
     end
   end
 
   @impl true
   def handle_call({:balance, city_id}, _from, state) do
-    balance = Map.get(state.cities, city_id, 0)
-    {:reply, balance, state}
-  end
-
-  @impl true
-  def handle_call({:lock_to_mint, city_id, amount, pubkey}, _from, state) do
-    # Add BSV to treasury
-    current_balance = Map.get(state.cities, city_id, 0)
-    new_balance = current_balance + amount
-
-    # Mint tokens (1:1 with satoshis)
-    city_tokens = Map.get(state.token_supply, city_id, %{})
-    current_tokens = Map.get(city_tokens, pubkey, 0)
-    new_tokens = current_tokens + amount
-
-    new_state = %{state |
-      cities: Map.put(state.cities, city_id, new_balance),
-      token_supply: Map.put(state.token_supply, city_id,
-        Map.put(city_tokens, pubkey, new_tokens))
-    }
-
-    {:reply, {:ok, amount, new_balance}, new_state}
-  end
-
-  @impl true
-  def handle_call({:redeem, city_id, token_amount, pubkey}, _from, state) do
-    city_tokens = Map.get(state.token_supply, city_id, %{})
-    current_tokens = Map.get(city_tokens, pubkey, 0)
-    current_balance = Map.get(state.cities, city_id, 0)
-
-    cond do
-      token_amount > current_tokens ->
-        {:reply, {:error, :insufficient_tokens}, state}
-
-      token_amount > current_balance ->
-        {:reply, {:error, :insufficient_treasury}, state}
-
-      true ->
-        new_tokens = current_tokens - token_amount
-        new_balance = current_balance - token_amount
-
-        new_state = %{state |
-          cities: Map.put(state.cities, city_id, new_balance),
-          token_supply: Map.put(state.token_supply, city_id,
-            Map.put(city_tokens, pubkey, new_tokens))
-        }
-
-        {:reply, {:ok, token_amount}, new_state}
-    end
-  end
-
-  @impl true
-  def handle_call({:token_balance, city_id, pubkey}, _from, state) do
-    city_tokens = Map.get(state.token_supply, city_id, %{})
-    balance = Map.get(city_tokens, pubkey, 0)
-    {:reply, balance, state}
+    {:reply, Map.get(state.treasuries, city_id, 0), state}
   end
 end

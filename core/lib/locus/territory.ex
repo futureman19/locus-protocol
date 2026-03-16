@@ -1,173 +1,84 @@
 defmodule Locus.Territory do
   @moduledoc """
-  Territory management — claim, release, and transfer at all hierarchy levels.
+  Territory management — claim, release, transfer at all hierarchy levels.
 
-  Territories use a Geo-IPv6 addressing scheme mapping the physical world
-  into a 128-bit address space with 7 hierarchy levels.
+  Per spec 01-territory-hierarchy.md:
 
-  ## Progressive Taxation
+      /128 Continent     (no stake, geographic only)
+      /64  Country       (no stake, jurisdiction boundary)
+      /32  City          (32 BSV stake)
+      /16  Public Block  (auctioned by city treasury, Fibonacci unlock)
+      /16  Private Block (8 BSV stake)
+      /8   Building      (8 BSV stake)
+      /4   Home          (4 BSV stake)
+      /2   Aura          (automatic with presence)
+      /1   Object        (0.1-64 BSV depending on type)
 
-  Citizens pay exponentially more for each additional territory:
+  ## Progressive Property Tax
 
-      1st territory: base_cost
-      2nd territory: base_cost × 2
-      3rd territory: base_cost × 4
-      Nth territory: base_cost × 2^(N-1)
+      1st property: base_cost
+      2nd property: base_cost × 2
+      3rd property: base_cost × 4
+      Nth property: base_cost × 2^(N-1)
+
+  ## H3 Addressing
+
+  Territory IDs use H3 hexagonal grid indexes at appropriate resolutions:
+      /32 City:     H3 Resolution 7  (~5.1 km²)
+      /8 Building:  H3 Resolution 9  (~0.1 km²)
+      /4 Home:      H3 Resolution 10 (~0.015 km²)
+      /1 Object:    H3 Resolution 12 (~0.003 km²)
   """
 
   alias Locus.Schemas.Territory, as: TerritorySchema
 
-  # Bit layout: world(8) + continent(8) + country(16) + region(16) + city(24) + district(24) + block(32) = 128
-  @level_specs [
-    {:world,     8,   0},
-    {:continent, 8,   8},
-    {:country,   16,  16},
-    {:region,    16,  32},
-    {:city,      24,  48},
-    {:district,  24,  72},
-    {:block,     32,  96}
-  ]
-
   @doc """
-  Encode geographic coordinates into a Geo-IPv6 territory address.
+  Claim a territory at a given level.
 
-  Takes a map of hierarchy components and returns a 128-bit (16-byte) binary.
-
-  ## Examples
-
-      iex> addr = Locus.Territory.encode(%{world: 1, continent: 3, country: 840, region: 36, city: 1})
-      iex> byte_size(addr)
-      16
-  """
-  @spec encode(map()) :: binary()
-  def encode(components) when is_map(components) do
-    world     = Map.get(components, :world, 0)
-    continent = Map.get(components, :continent, 0)
-    country   = Map.get(components, :country, 0)
-    region    = Map.get(components, :region, 0)
-    city      = Map.get(components, :city, 0)
-    district  = Map.get(components, :district, 0)
-    block     = Map.get(components, :block, 0)
-
-    <<
-      world::8,
-      continent::8,
-      country::16,
-      region::16,
-      city::24,
-      district::24,
-      block::32
-    >>
-  end
-
-  @doc """
-  Decode a 128-bit Geo-IPv6 address into its hierarchy components.
-
-  ## Examples
-
-      iex> Locus.Territory.decode(<<1, 3, 0, 42, 0, 36, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0>>)
-      %{world: 1, continent: 3, country: 42, region: 36, city: 1, district: 0, block: 0}
-  """
-  @spec decode(binary()) :: map()
-  def decode(<<
-    world::8,
-    continent::8,
-    country::16,
-    region::16,
-    city::24,
-    district::24,
-    block::32
-  >>) do
-    %{
-      world: world,
-      continent: continent,
-      country: country,
-      region: region,
-      city: city,
-      district: district,
-      block: block
-    }
-  end
-
-  @doc """
-  Determine the hierarchy level of a territory address.
-
-  The level is determined by the most specific non-zero component.
-
-  ## Examples
-
-      iex> Locus.Territory.level(%{world: 1, continent: 3, country: 0, region: 0, city: 0, district: 0, block: 0})
-      :continent
-  """
-  @spec level(binary() | map()) :: TerritorySchema.level()
-  def level(addr) when is_binary(addr), do: level(decode(addr))
-
-  def level(%{} = components) do
-    cond do
-      Map.get(components, :block, 0) > 0     -> :block
-      Map.get(components, :district, 0) > 0   -> :district
-      Map.get(components, :city, 0) > 0       -> :city
-      Map.get(components, :region, 0) > 0     -> :region
-      Map.get(components, :country, 0) > 0    -> :country
-      Map.get(components, :continent, 0) > 0  -> :continent
-      true                                     -> :world
-    end
-  end
-
-  @doc """
-  Get the parent address of a territory by zeroing out its most specific component.
-
-  ## Examples
-
-      iex> components = %{world: 1, continent: 3, country: 840, region: 0, city: 0, district: 0, block: 0}
-      iex> Locus.Territory.parent(components)
-      %{world: 1, continent: 3, country: 0, region: 0, city: 0, district: 0, block: 0}
-  """
-  @spec parent(binary() | map()) :: map() | nil
-  def parent(addr) when is_binary(addr), do: parent(decode(addr))
-
-  def parent(%{} = components) do
-    current_level = level(components)
-
-    case current_level do
-      :world -> nil
-      :continent -> %{components | continent: 0}
-      :country   -> %{components | country: 0}
-      :region    -> %{components | region: 0}
-      :city      -> %{components | city: 0}
-      :district  -> %{components | district: 0}
-      :block     -> %{components | block: 0}
-    end
-  end
-
-  @doc """
-  Claim a territory for an owner.
+  Per spec 01-territory-hierarchy.md:
+  - Stake must meet level minimum
+  - First-claimer wins (earlier tx timestamp)
+  - CLTV lock for 21,600 blocks
 
   Returns `{:ok, territory}` or `{:error, reason}`.
   """
-  @spec claim(binary(), binary(), non_neg_integer(), keyword()) ::
-    {:ok, TerritorySchema.t()} | {:error, atom()}
-  def claim(territory_id, owner_pubkey, block_height, opts \\ []) do
-    level = level(territory_id)
-    city_id = Keyword.get(opts, :city_id)
-    tax_multiplier = Keyword.get(opts, :tax_multiplier, 1)
+  @spec claim(map()) :: {:ok, TerritorySchema.t()} | {:error, atom()}
+  def claim(params) do
+    level = Map.fetch!(params, :level)
+    h3_index = Map.fetch!(params, :h3_index)
+    owner_pubkey = Map.fetch!(params, :owner_pubkey)
+    stake_amount = Map.fetch!(params, :stake_amount)
+    block_height = Map.fetch!(params, :block_height)
+    city_id = Map.get(params, :city_id)
 
-    territory = %TerritorySchema{
-      id: territory_id,
-      level: level,
-      parent_id: parent(territory_id) |> maybe_encode(),
-      owner_pubkey: owner_pubkey,
-      city_id: city_id,
-      claimed_at: block_height,
-      status: :claimed,
-      tax_multiplier: tax_multiplier
-    }
+    min_stake = TerritorySchema.stake_for_level(level)
 
-    {:ok, territory}
+    cond do
+      min_stake > 0 and stake_amount < min_stake ->
+        {:error, :insufficient_stake}
+
+      true ->
+        territory_id = derive_territory_id(h3_index, level)
+
+        territory = %TerritorySchema{
+          id: territory_id,
+          h3_index: h3_index,
+          level: level,
+          parent_id: Map.get(params, :parent_id),
+          owner_pubkey: owner_pubkey,
+          city_id: city_id,
+          claimed_at: block_height,
+          stake_amount: stake_amount,
+          lock_height: block_height + 21_600,
+          status: :claimed
+        }
+
+        {:ok, territory}
+    end
   end
 
   @doc """
-  Release a claimed territory back to unclaimed status.
+  Release a claimed territory back to unclaimed.
   """
   @spec release(TerritorySchema.t(), binary()) ::
     {:ok, TerritorySchema.t()} | {:error, atom()}
@@ -185,18 +96,23 @@ defmodule Locus.Territory do
           city_id: nil,
           status: :unclaimed,
           claimed_at: nil,
-          tax_multiplier: 1
+          stake_amount: 0,
+          lock_height: 0
         }
         {:ok, released}
     end
   end
 
   @doc """
-  Transfer a territory to a new owner.
+  Transfer territory to a new owner.
+
+  Per spec 07-transaction-formats.md TERRITORY_TRANSFER (0x12):
+  - Requires signature from current owner
+  - Optionally includes price (0 for gift)
   """
-  @spec transfer(TerritorySchema.t(), binary(), binary()) ::
+  @spec transfer(TerritorySchema.t(), binary(), binary(), keyword()) ::
     {:ok, TerritorySchema.t()} | {:error, atom()}
-  def transfer(%TerritorySchema{} = territory, from_pubkey, to_pubkey) do
+  def transfer(%TerritorySchema{} = territory, from_pubkey, to_pubkey, _opts \\ []) do
     cond do
       territory.status != :claimed ->
         {:error, :not_claimed}
@@ -205,57 +121,73 @@ defmodule Locus.Territory do
         {:error, :not_owner}
 
       true ->
-        transferred = %{territory | owner_pubkey: to_pubkey}
-        {:ok, transferred}
+        {:ok, %{territory | owner_pubkey: to_pubkey}}
     end
   end
 
   @doc """
-  Calculate the progressive tax cost for claiming the Nth territory.
+  Calculate progressive property tax for the Nth property.
 
-  Progressive tax doubles with each additional territory:
-  1st = base, 2nd = 2×base, 3rd = 4×base, Nth = base × 2^(N-1)
+  Per spec 03-staking-economics.md:
+  Cost(n) = base_cost × 2^(n-1)
 
   ## Examples
 
-      iex> Locus.Territory.progressive_tax(10_000, 1)
-      10_000
-      iex> Locus.Territory.progressive_tax(10_000, 3)
-      40_000
+      iex> Locus.Territory.progressive_tax(800_000_000, 1)
+      800_000_000
+      iex> Locus.Territory.progressive_tax(800_000_000, 3)
+      3_200_000_000
   """
   @spec progressive_tax(non_neg_integer(), pos_integer()) :: non_neg_integer()
-  def progressive_tax(base_cost, territory_number) when territory_number >= 1 do
-    multiplier = Bitwise.bsl(1, territory_number - 1)
-    base_cost * multiplier
+  def progressive_tax(base_cost, property_number) when property_number >= 1 do
+    trunc(base_cost * :math.pow(2, property_number - 1))
   end
 
   @doc """
-  Format a Geo-IPv6 address as a human-readable string.
+  Calculate total cost for N properties at a given base.
 
-  ## Examples
-
-      iex> Locus.Territory.format_address(%{world: 1, continent: 3, country: 840, region: 36, city: 1, district: 0, block: 0})
-      "01:03:0348:0024:000001:000000:00000000"
+  Per spec: Total = base_cost × (2^N - 1)
   """
-  @spec format_address(binary() | map()) :: String.t()
-  def format_address(addr) when is_binary(addr), do: format_address(decode(addr))
-
-  def format_address(%{} = c) do
-    world     = String.pad_leading(Integer.to_string(c.world, 16), 2, "0")
-    continent = String.pad_leading(Integer.to_string(c.continent, 16), 2, "0")
-    country   = String.pad_leading(Integer.to_string(c.country, 16), 4, "0")
-    region    = String.pad_leading(Integer.to_string(c.region, 16), 4, "0")
-    city      = String.pad_leading(Integer.to_string(c.city, 16), 6, "0")
-    district  = String.pad_leading(Integer.to_string(c.district, 16), 6, "0")
-    block     = String.pad_leading(Integer.to_string(c.block, 16), 8, "0")
-
-    "#{world}:#{continent}:#{country}:#{region}:#{city}:#{district}:#{block}"
+  @spec total_cost(non_neg_integer(), pos_integer()) :: non_neg_integer()
+  def total_cost(base_cost, count) when count >= 1 do
+    trunc(base_cost * (:math.pow(2, count) - 1))
   end
 
-  @doc "List of level specs: [{level, bit_width, bit_offset}, ...]"
-  def level_specs, do: @level_specs
+  @doc """
+  Fee distribution for an interaction on a /1 object.
 
-  # Encode a components map back to binary, or return nil
-  defp maybe_encode(nil), do: nil
-  defp maybe_encode(%{} = components), do: encode(components)
+  Per spec 03-staking-economics.md:
+      50% → Application/Ghost developer
+      40% → Territory owner(s):
+          50% of 40% → Building owner (/8)
+          30% of 40% → City treasury (/32)
+          20% of 40% → Block owner (/16)
+      10% → Protocol treasury
+
+  Returns map of allocations in satoshis.
+  """
+  @spec distribute_fees(non_neg_integer()) :: map()
+  def distribute_fees(total_fee) do
+    developer = div(total_fee * 50, 100)
+    territory = div(total_fee * 40, 100)
+    protocol = total_fee - developer - territory
+
+    building_owner = div(territory * 50, 100)
+    city_treasury = div(territory * 30, 100)
+    block_owner = territory - building_owner - city_treasury
+
+    %{
+      developer: developer,
+      territory_total: territory,
+      building_owner: building_owner,
+      city_treasury: city_treasury,
+      block_owner: block_owner,
+      protocol: protocol
+    }
+  end
+
+  defp derive_territory_id(h3_index, level) do
+    data = "#{h3_index}:#{level}"
+    :crypto.hash(:sha256, data)
+  end
 end

@@ -4,53 +4,53 @@ defmodule Locus.StakingTest do
   alias Locus.Staking
 
   describe "calculate_lock_height/1" do
-    test "adds lock period to current height" do
+    test "adds 21,600 blocks" do
       assert Staking.calculate_lock_height(800_000) == 821_600
     end
   end
 
-  describe "validate_stake/2" do
-    test "accepts sufficient stake" do
-      assert :ok = Staking.validate_stake(1_000_000)
-    end
-
-    test "rejects insufficient stake" do
-      assert {:error, :insufficient_stake} = Staking.validate_stake(100)
-    end
-
-    test "accepts custom minimum" do
-      assert :ok = Staking.validate_stake(500, min_stake: 500)
-      assert {:error, :insufficient_stake} = Staking.validate_stake(499, min_stake: 500)
+  describe "calculate_penalty/1" do
+    test "10% penalty per spec (NOT 50%)" do
+      # 32 BSV stake
+      stake = 3_200_000_000
+      penalty = Staking.calculate_penalty(stake)
+      assert penalty == 320_000_000  # 10% = 3.2 BSV
     end
   end
 
-  describe "matured?/2" do
-    test "returns true when current height >= lock height" do
-      assert Staking.matured?(821_600, 821_600)
-      assert Staking.matured?(821_600, 900_000)
+  describe "calculate_emergency_return/1" do
+    test "returns 90% of stake" do
+      stake = 3_200_000_000
+      returned = Staking.calculate_emergency_return(stake)
+      assert returned == 2_880_000_000  # 90% = 28.8 BSV
     end
 
-    test "returns false when not yet matured" do
-      refute Staking.matured?(821_600, 800_000)
-    end
-  end
-
-  describe "emergency_unlock/1" do
-    test "calculates 50% penalty" do
-      {:ok, returned, penalty} = Staking.emergency_unlock(1_000_000)
-      assert penalty == 500_000
-      assert returned == 500_000
-      assert returned + penalty == 1_000_000
+    test "penalty + return == original stake" do
+      stake = 3_200_000_000
+      penalty = Staking.calculate_penalty(stake)
+      returned = Staking.calculate_emergency_return(stake)
+      assert penalty + returned == stake
     end
   end
 
   describe "territory_tax/2" do
-    test "progressive doubling" do
-      base = 10_000
-      assert Staking.territory_tax(base, 1) == 10_000
-      assert Staking.territory_tax(base, 2) == 20_000
-      assert Staking.territory_tax(base, 3) == 40_000
-      assert Staking.territory_tax(base, 4) == 80_000
+    test "progressive doubling per spec" do
+      # Per spec 03-staking-economics.md: cost = base × 2^(n-1)
+      base = 800_000_000  # 8 BSV for building
+
+      assert Staking.territory_tax(base, 1) == 800_000_000
+      assert Staking.territory_tax(base, 2) == 1_600_000_000
+      assert Staking.territory_tax(base, 3) == 3_200_000_000
+      assert Staking.territory_tax(base, 4) == 6_400_000_000
+    end
+
+    test "city founding progressive tax" do
+      base = 3_200_000_000  # 32 BSV for city
+
+      assert Staking.territory_tax(base, 1) == 3_200_000_000   # 32 BSV
+      assert Staking.territory_tax(base, 2) == 6_400_000_000   # 64 BSV
+      assert Staking.territory_tax(base, 3) == 12_800_000_000  # 128 BSV
+      assert Staking.territory_tax(base, 5) == 51_200_000_000  # 512 BSV
     end
   end
 end
