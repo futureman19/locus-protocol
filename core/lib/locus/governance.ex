@@ -148,14 +148,20 @@ defmodule Locus.Governance do
   - Republic (Town): 60%
   - Direct Democracy (City): 40%
   - Senate (Metropolis): 51%
+
+  SECURITY FIX: Uses integer arithmetic to avoid floating-point precision issues.
   """
   @spec tally(Proposal.t(), City.t()) :: :passed | :rejected | :pending
   def tally(%Proposal{} = proposal, %City{} = city) do
-    threshold = Proposal.threshold(proposal.proposal_type)
-    quorum = quorum_for_phase(city.phase)
+    threshold_percent = Proposal.threshold(proposal.proposal_type) * 100 |> round()
+    quorum_percent = quorum_for_phase(city.phase) * 100 |> round()
 
     total_votes = proposal.votes_for + proposal.votes_against + proposal.votes_abstain
-    quorum_needed = ceil(city.citizen_count * quorum)
+    # SECURITY FIX: Integer-based quorum calculation
+    quorum_needed = div(city.citizen_count * quorum_percent, 100)
+    
+    # Require at least 1 vote if there's any citizen
+    quorum_needed = max(quorum_needed, min(city.citizen_count, 1))
 
     cond do
       total_votes < quorum_needed ->
@@ -164,11 +170,18 @@ defmodule Locus.Governance do
       proposal.votes_for + proposal.votes_against == 0 ->
         :pending
 
-      proposal.votes_for / (proposal.votes_for + proposal.votes_against) >= threshold ->
-        :passed
-
       true ->
-        :rejected
+        # SECURITY FIX: Integer-based percentage calculation
+        # votes_for / (votes_for + votes_against) >= threshold
+        # => votes_for * 100 >= (votes_for + votes_against) * threshold_percent
+        total_cast = proposal.votes_for + proposal.votes_against
+        for_percentage = div(proposal.votes_for * 100, total_cast)
+        
+        if for_percentage >= threshold_percent do
+          :passed
+        else
+          :rejected
+        end
     end
   end
 

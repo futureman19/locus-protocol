@@ -17,6 +17,7 @@ import {
   VOTE_CODES,
 } from '../constants/opcodes';
 import { encode as msgpackEncode, decode as msgpackDecode } from '../utils/messagepack';
+import { generateNonce } from '../utils/crypto';
 import {
   MessageTypeName,
   DecodedTransaction,
@@ -199,7 +200,8 @@ export class TransactionBuilder {
       entity_type: params.entityType,
       location: params.h3Index,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: params.nonce ?? Math.floor(Math.random() * 0xffffffff),
+      // SECURITY FIX: Use cryptographically secure RNG, not Math.random()
+      nonce: params.nonce ?? generateNonce(),
     });
   }
 

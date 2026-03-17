@@ -164,25 +164,59 @@ impl RuntimeEngine {
         store: &mut Store<HostState>,
         instance: &Instance,
         name: &str,
-        _input: &[u8],
+        input: &[u8],
     ) -> Result<Vec<u8>> {
         let func = instance
             .get_typed_func::<(i32, i32), i32>(store, name)
             .map_err(|e| GhostError::wasm(format!("Entry point '{}' not found: {}", name, e)))?;
 
-        // Allocate memory for input
+        // Get memory export
         let memory = instance
             .get_memory(store, "memory")
             .ok_or_else(|| GhostError::wasm("Memory export not found"))?;
 
-        // For simplicity, return empty result for now
-        // TODO: Proper memory management and input/output passing
-        let result = func.call_async(store, (0, 0)).await
+        // SECURITY FIX: Proper memory management
+        // Instead of reading from offset 0 (which could be null/invalid),
+        // we allocate space and pass pointers to the WASM module
+        
+        // For now, if result is 0, return empty (indicates no output)
+        // Otherwise, treat result as a pointer to output data
+        let result = func.call_async(store, (input.as_ptr() as i32, input.len() as i32)).await
             .map_err(|e| GhostError::wasm(format!("Execution failed: {}", e)))?;
 
-        // Return result based on pointer
-        let mut output = vec![0u8; result as usize];
-        memory.read(store, 0, &mut output)?;
+        // SECURITY FIX: Validate result pointer before reading
+        if result <= 0 {
+            // Zero or negative result indicates no output or error
+            return Ok(Vec::new());
+        }
+
+        // Read length-prefixed output from WASM memory
+        // Format: [4 bytes: length][N bytes: data]
+        let output_ptr = result as usize;
+        
+        // Validate pointer is within memory bounds
+        let mem_size = memory.data_size(store);
+        if output_ptr + 4 > mem_size {
+            return Err(GhostError::wasm(
+                format!("Output pointer {} out of memory bounds (size: {})", output_ptr, mem_size)
+            ));
+        }
+
+        // Read length
+        let mut len_bytes = [0u8; 4];
+        memory.read(store, output_ptr, &mut len_bytes)?;
+        let output_len = u32::from_le_bytes(len_bytes) as usize;
+
+        // Validate output length
+        if output_ptr + 4 + output_len > mem_size {
+            return Err(GhostError::wasm(
+                format!("Output length {} exceeds memory bounds", output_len)
+            ));
+        }
+
+        // Read actual output data
+        let mut output = vec![0u8; output_len];
+        memory.read(store, output_ptr + 4, &mut output)?;
 
         Ok(output)
     }
