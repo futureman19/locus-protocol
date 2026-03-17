@@ -10,21 +10,30 @@ defmodule Locus.TxBuilder do
 
   require Logger
 
-  # Protocol prefix
-  @protocol_prefix "locus"
-  @version_0_1_0 <<0, 1>>
+  # Protocol prefix - TERRITORY-CENTRIC (per spec 07)
+  @protocol_prefix "LOCUS"
+  @version 0x01
 
-  # Type codes
+  # Type codes - TERRITORY-CENTRIC PROTOCOL (per spec 07)
+  # These MUST match core/lib/locus/transaction.ex
   @type_codes %{
-    ghost_register: 0x01,
-    ghost_update: 0x02,
-    ghost_retire: 0x03,
-    heartbeat: 0x04,
-    invocation: 0x05,
-    challenge: 0x06,
-    challenge_response: 0x07,
-    stake: 0x08,
-    unstake: 0x09
+    city_found:         0x01,
+    city_update:        0x02,
+    citizen_join:       0x03,
+    citizen_leave:      0x04,
+    territory_claim:    0x10,
+    territory_release:  0x11,
+    territory_transfer: 0x12,
+    object_deploy:      0x20,
+    object_update:      0x21,
+    object_destroy:     0x22,
+    heartbeat:          0x30,
+    ghost_invoke:       0x40,
+    ghost_payment:      0x41,
+    gov_propose:        0x50,
+    gov_vote:           0x51,
+    gov_exec:           0x52,
+    ubi_claim:          0x60
   }
 
   @doc """
