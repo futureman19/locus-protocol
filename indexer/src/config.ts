@@ -25,7 +25,7 @@ export function loadConfig(): Config {
 
   // SECURITY: Parse CORS whitelist from env
   const corsWhitelist = process.env.CORS_WHITELIST
-    ? process.env.CORS_WHITELIST.split(',').map(s => s.trim()).filter(Boolean)
+    ? process.env.CORS_WHITELIST.split(',').map((s: string) => s.trim()).filter(Boolean)
     : undefined;
 
   return {
