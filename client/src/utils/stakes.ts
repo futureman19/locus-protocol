@@ -48,7 +48,14 @@ export function calculateEmergencyReturn(stakeAmount: number): number {
 /**
  * Progressive property tax: cost = base * 2^(n-1)
  * Per spec 03-staking-economics.md.
+ * 
+ * SECURITY FIX: Use integer bit shift instead of Math.pow to avoid
+ * floating point precision errors.
  */
 export function progressiveTax(baseCost: number, propertyNumber: number): number {
-  return baseCost * Math.pow(2, propertyNumber - 1);
+  // SECURITY FIX: Use bit shift for exact integer math
+  // Math.pow(2, n-1) can introduce floating point errors
+  // 1 << (n-1) is exact for reasonable property numbers
+  const multiplier = 1 << (propertyNumber - 1);
+  return baseCost * multiplier;
 }

@@ -30,7 +30,7 @@ async function main() {
   logger.info({ lastBlock }, 'Resuming from block');
 
   // Start REST API
-  const app = createApp();
+  const app = createApp(config);
   app.listen(config.server.port, config.server.host, () => {
     logger.info({ port: config.server.port, host: config.server.host }, 'REST API listening');
   });

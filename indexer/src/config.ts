@@ -12,6 +12,8 @@ export interface Config {
   server: {
     port: number;
     host: string;
+    // SECURITY: CORS whitelist for production
+    corsWhitelist?: string[];
   };
   startBlock: number;
   logLevel: string;
@@ -20,6 +22,11 @@ export interface Config {
 export function loadConfig(): Config {
   const runtimeSecret = loadJsonEnv('INDEXER_RUNTIME_SECRET_JSON');
   const database = loadDatabaseConfig();
+
+  // SECURITY: Parse CORS whitelist from env
+  const corsWhitelist = process.env.CORS_WHITELIST
+    ? process.env.CORS_WHITELIST.split(',').map(s => s.trim()).filter(Boolean)
+    : undefined;
 
   return {
     database,
@@ -31,6 +38,7 @@ export function loadConfig(): Config {
     server: {
       port: parseInt(env('PORT', '3000'), 10),
       host: env('HOST', '0.0.0.0'),
+      corsWhitelist, // SECURITY: Restricted CORS in production
     },
     startBlock: parseInt(env('START_BLOCK', '0'), 10),
     logLevel: env('LOG_LEVEL', 'info'),
