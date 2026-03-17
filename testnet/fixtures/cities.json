@@ -1,0 +1,115 @@
+{
+  "network": "testnet",
+  "start_height": 910000,
+  "cities": [
+    {
+      "slug": "atlas",
+      "name": "Atlas Prime",
+      "description": "Genesis-phase bootstrap city for smoke tests.",
+      "founder_id": "founder_atlas",
+      "target_citizens": 1,
+      "expected_phase": "genesis",
+      "expected_blocks_unlocked": 2,
+      "location": {
+        "lat": 37.7749,
+        "lng": -122.4194,
+        "h3_res7": "872830828ffffff"
+      },
+      "policies": {
+        "ubi_enabled": false,
+        "ubi_amount": 0,
+        "block_auction_period": 604800,
+        "building_code": "permissive",
+        "immigration_policy": "open"
+      }
+    },
+    {
+      "slug": "beacon",
+      "name": "Beacon Hill",
+      "description": "Settlement city used to trigger the town Fibonacci unlock.",
+      "founder_id": "founder_beacon",
+      "target_citizens": 3,
+      "expected_phase": "settlement",
+      "expected_blocks_unlocked": 2,
+      "location": {
+        "lat": 47.6062,
+        "lng": -122.3321,
+        "h3_res7": "8728d5425ffffff"
+      },
+      "policies": {
+        "ubi_enabled": false,
+        "ubi_amount": 0,
+        "block_auction_period": 604800,
+        "building_code": "moderate",
+        "immigration_policy": "open"
+      }
+    },
+    {
+      "slug": "cedar",
+      "name": "Cedar Commons",
+      "description": "Village city that receives treasury funding and grows into a UBI city.",
+      "founder_id": "founder_cedar",
+      "target_citizens": 4,
+      "expected_phase": "village",
+      "expected_blocks_unlocked": 5,
+      "location": {
+        "lat": 30.2672,
+        "lng": -97.7431,
+        "h3_res7": "87489e28affffff"
+      },
+      "policies": {
+        "ubi_enabled": false,
+        "ubi_amount": 0,
+        "block_auction_period": 604800,
+        "building_code": "maker",
+        "immigration_policy": "open"
+      }
+    },
+    {
+      "slug": "delta",
+      "name": "Delta Harbor",
+      "description": "Direct democracy city with enough treasury for recurring UBI checks.",
+      "founder_id": "founder_delta",
+      "target_citizens": 21,
+      "expected_phase": "city",
+      "expected_blocks_unlocked": 16,
+      "initial_treasury_funding_sats": 8800000000,
+      "initial_funding_txid": "delta-initial-funding",
+      "location": {
+        "lat": 40.7128,
+        "lng": -74.006,
+        "h3_res7": "872a1072cffffff"
+      },
+      "policies": {
+        "ubi_enabled": true,
+        "ubi_amount": 0,
+        "block_auction_period": 604800,
+        "building_code": "dense",
+        "immigration_policy": "open"
+      }
+    },
+    {
+      "slug": "echelon",
+      "name": "Echelon Spire",
+      "description": "Metropolis fixture for full-scale node and UBI validation.",
+      "founder_id": "founder_echelon",
+      "target_citizens": 51,
+      "expected_phase": "metropolis",
+      "expected_blocks_unlocked": 24,
+      "initial_treasury_funding_sats": 26800000000,
+      "initial_funding_txid": "echelon-initial-funding",
+      "location": {
+        "lat": 34.0522,
+        "lng": -118.2437,
+        "h3_res7": "8729a1d75ffffff"
+      },
+      "policies": {
+        "ubi_enabled": true,
+        "ubi_amount": 0,
+        "block_auction_period": 604800,
+        "building_code": "vertical",
+        "immigration_policy": "open"
+      }
+    }
+  ]
+}

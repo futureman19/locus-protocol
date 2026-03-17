@@ -1,0 +1,189 @@
+syntax = "proto3";
+
+package ghost.v1;
+
+option go_package = "github.com/locus-protocol/ghost-runtime/proto";
+
+// Ghost Runtime Service
+service GhostRuntime {
+  // Invoke a ghost with the given action
+  rpc InvokeGhost(InvokeRequest) returns (InvokeResponse);
+  
+  // Stream interactions with a ghost (for real-time sessions)
+  rpc StreamInteractions(stream InteractionMessage) returns (stream InteractionMessage);
+  
+  // Get current state of a ghost
+  rpc GetGhostState(GhostStateRequest) returns (GhostState);
+  
+  // List active ghosts
+  rpc ListGhosts(ListGhostsRequest) returns (ListGhostsResponse);
+  
+  // User leaving ghost proximity
+  rpc LeaveGhost(LeaveRequest) returns (LeaveResponse);
+  
+  // Payment channel operations
+  rpc OpenPaymentChannel(OpenChannelRequest) returns (PaymentChannel);
+  rpc UpdateChannelState(ChannelUpdateRequest) returns (ChannelUpdateResponse);
+  rpc ClosePaymentChannel(CloseChannelRequest) returns (PaymentChannel);
+  
+  // Runtime statistics
+  rpc GetRuntimeStats(StatsRequest) returns (RuntimeStats);
+}
+
+// ===== Messages =====
+
+message InvokeRequest {
+  string ghost_id = 1;
+  string user_pubkey = 2;
+  Location user_location = 3;
+  string action = 4;
+  bytes payload = 5;
+  repeated string capabilities_requested = 6;
+  uint64 payment_deposit = 7;
+  uint64 nonce = 8;
+}
+
+message InvokeResponse {
+  string ghost_id = 1;
+  string instance_id = 2;
+  bytes result = 3;
+  uint64 payment_charged = 4;
+  uint64 execution_time_ms = 5;
+  ResourceUsage resource_usage = 6;
+}
+
+message Location {
+  double lat = 1;
+  double lng = 2;
+  string h3_index = 3;
+}
+
+message ResourceUsage {
+  uint64 memory_bytes = 1;
+  uint64 cpu_time_ms = 2;
+  uint64 storage_bytes = 3;
+  uint32 syscalls = 4;
+  uint32 network_requests = 5;
+}
+
+message InteractionMessage {
+  string ghost_id = 1;
+  string instance_id = 2;
+  string user_pubkey = 3;
+  oneof payload {
+    UserMessage user_message = 4;
+    GhostResponse ghost_response = 5;
+    PaymentUpdate payment = 6;
+  }
+}
+
+message UserMessage {
+  string action = 1;
+  bytes data = 2;
+}
+
+message GhostResponse {
+  bytes data = 1;
+  bool requires_payment = 2;
+  uint64 payment_amount = 3;
+}
+
+message PaymentUpdate {
+  uint64 amount = 1;
+  string description = 2;
+  bytes signature = 3;
+}
+
+message GhostStateRequest {
+  string ghost_id = 1;
+}
+
+message GhostState {
+  string ghost_id = 1;
+  string state = 2; // "dormant", "potential", "manifest"
+  string cid = 3;
+  string owner = 4;
+  string location = 5;
+  repeated string capabilities = 6;
+  uint64 started_at = 7;
+  ResourceUsage resource_usage = 8;
+}
+
+message ListGhostsRequest {
+  optional string state_filter = 1;
+  optional string location_filter = 2;
+}
+
+message ListGhostsResponse {
+  repeated GhostState ghosts = 1;
+  uint32 total = 2;
+}
+
+message LeaveRequest {
+  string ghost_id = 1;
+  string user_pubkey = 2;
+  optional bytes final_channel_signature = 3;
+}
+
+message LeaveResponse {
+  bool success = 1;
+  string ghost_id = 2;
+  uint64 final_payment = 3;
+}
+
+message OpenChannelRequest {
+  string ghost_id = 1;
+  string user_pubkey = 2;
+  uint64 funding_amount = 3;
+  string arbiter_pubkey = 4;
+}
+
+message PaymentChannel {
+  string channel_id = 1;
+  string ghost_id = 2;
+  string user_pubkey = 3;
+  string ghost_pubkey = 4;
+  string arbiter_pubkey = 5;
+  uint64 total_funding = 6;
+  uint64 user_balance = 7;
+  uint64 ghost_balance = 8;
+  uint64 state_sequence = 9;
+  bool is_open = 10;
+  uint64 opened_at = 11;
+  uint64 expires_at = 12;
+}
+
+message ChannelUpdateRequest {
+  string channel_id = 1;
+  uint64 ghost_balance = 2;
+  uint64 user_balance = 3;
+  uint64 sequence = 4;
+  bytes user_signature = 5;
+}
+
+message ChannelUpdateResponse {
+  bool accepted = 1;
+  string channel_id = 2;
+  bytes ghost_signature = 3;
+  string rejection_reason = 4;
+}
+
+message CloseChannelRequest {
+  string channel_id = 1;
+  bytes final_signature = 2;
+  bool force_close = 3;
+}
+
+message StatsRequest {}
+
+message RuntimeStats {
+  string version = 1;
+  uint64 uptime_seconds = 2;
+  uint64 total_invocations = 3;
+  uint64 total_fees_collected = 4;
+  uint32 active_ghosts = 5;
+  uint32 dormant_ghosts = 6;
+  uint32 potential_ghosts = 7;
+  uint32 manifest_ghosts = 8;
+  uint64 memory_usage_bytes = 9;
+}

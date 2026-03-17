@@ -2,3 +2,4 @@ node_modules/
 dist/
 .claude/
 git_status.txt
+testnet/runtime/

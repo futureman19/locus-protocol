@@ -1,0 +1,91 @@
+[package]
+name = "ghost-runtime"
+version = "0.1.0"
+edition = "2021"
+authors = ["Locus Protocol Team"]
+description = "WASM Runtime for Ghost Execution - Schrödinger State Machine"
+license = "MIT"
+repository = "https://github.com/locus-protocol/ghost-runtime"
+
+[dependencies]
+# WASM runtime
+wasmtime = "18.0"
+wasmtime-wasi = "18.0"
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-stream = "0.1"
+
+# gRPC
+tonic = "0.11"
+prost = "0.12"
+tonic-reflection = "0.11"
+
+# HTTP API
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+hyper = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# IPFS/Arweave client
+reqwest = { version = "0.11", features = ["json", "stream"] }
+
+# Content addressing
+multihash = "0.19"
+cid = "0.11"
+
+# Cryptography
+sha2 = "0.10"
+sha3 = "0.10"
+hex = "0.4"
+secp256k1 = { version = "0.28", features = ["global-context", "serde"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# State machine
+strum = { version = "0.25", features = ["derive"] }
+
+# Config
+config = "0.14"
+dotenvy = "0.15"
+
+# H3 hex grid for location
+h3o = "0.6"
+
+[dev-dependencies]
+tokio-test = "0.4"
+wiremock = "0.6"
+criterion = { version = "0.5", features = ["html_reports"] }
+wasm-bindgen-test = "0.3"
+
+# Build sample WASM modules
+[build-dependencies]
+cc = "1.0"
+tonic-build = "0.11"
+
+[features]
+default = []
+proto = []
+
+[[bench]]
+name = "ghost_benchmark"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

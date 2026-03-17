@@ -1,0 +1,30 @@
+{
+  "protocol": "locus.ghost",
+  "version": 1,
+  "id": "greeter-tokyo-shibuya",
+  "name": "Tokyo Greeter",
+  "type": "greeter",
+  "description": "A friendly ghost that welcomes visitors to Shibuya",
+  "owner": "02aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd",
+  "location": "8f283080dcb019d",
+  "stake": 100000,
+  "wasm_hash": "sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+  "assets_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "capabilities": ["location", "storage"],
+  "limits": {
+    "max_memory": "32MB",
+    "max_execution_time": "3s",
+    "max_storage": "5MB",
+    "max_syscalls": 100,
+    "max_network_requests": 0
+  },
+  "fees": {
+    "interaction": 500,
+    "session": 0
+  },
+  "api_whitelist": [],
+  "entry_points": {
+    "greet": "handle_interaction",
+    "goodbye": "handle_leave"
+  }
+}

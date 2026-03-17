@@ -1,0 +1,53 @@
+{
+  "funding": [
+    {
+      "city_slug": "cedar",
+      "txid": "cedar-grant-001",
+      "amount_sats": 10000000000,
+      "reason": "treasury-bootstrap"
+    },
+    {
+      "city_slug": "delta",
+      "txid": "delta-grant-001",
+      "amount_sats": 3000000000,
+      "reason": "civic-infrastructure"
+    }
+  ],
+  "join_plans": [
+    {
+      "id": "atlas-growth",
+      "city_slug": "atlas",
+      "joiner_count": 3,
+      "expected_phase": "village",
+      "expected_blocks_unlocked": 5
+    },
+    {
+      "id": "beacon-growth",
+      "city_slug": "beacon",
+      "joiner_count": 6,
+      "expected_phase": "town",
+      "expected_blocks_unlocked": 8
+    },
+    {
+      "id": "cedar-growth",
+      "city_slug": "cedar",
+      "joiner_count": 17,
+      "expected_phase": "city",
+      "expected_blocks_unlocked": 16
+    }
+  ],
+  "ubi_rounds": [
+    {
+      "city_slug": "cedar",
+      "rounds": 1
+    },
+    {
+      "city_slug": "delta",
+      "rounds": 2
+    },
+    {
+      "city_slug": "echelon",
+      "rounds": 2
+    }
+  ]
+}

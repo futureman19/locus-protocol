@@ -1,8 +1,18 @@
 import Config
 
+network =
+  case System.get_env("LOCUS_NETWORK", "testnet") do
+    "mainnet" -> :mainnet
+    "testnet" -> :testnet
+    other -> String.to_atom(other)
+  end
+
 config :locus,
-  network: :testnet,
-  arc_endpoint: "https://arc.gorillapool.io",
+  network: network,
+  node_name: System.get_env("LOCUS_NODE_NAME", "locus-testnet-node"),
+  genesis_config_path: System.get_env("LOCUS_GENESIS_CONFIG", ""),
+  metrics_output_path: System.get_env("LOCUS_METRICS_OUTPUT", ""),
+  arc_endpoint: System.get_env("ARC_ENDPOINT", "https://arc.gorillapool.io"),
   arc_api_key: System.get_env("ARC_API_KEY", ""),
   min_stake_greeter: 1_000_000,
   min_stake_oracle: 10_000_000,

@@ -1,0 +1,809 @@
+openapi: 3.1.0
+info:
+  title: Locus Protocol Indexer API
+  version: 0.1.0
+  description: |
+    REST API for querying indexed Locus Protocol state from the BSV blockchain.
+    Indexes LOCUS OP_RETURN transactions and maintains current state for cities,
+    territories, citizens, objects, and governance proposals.
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: locus-indexer
+
+  /api/v1/status:
+    get:
+      summary: Indexer sync status and protocol statistics
+      tags: [Status]
+      responses:
+        "200":
+          description: Sync state and aggregate counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sync:
+                    type: object
+                    properties:
+                      last_block_height:
+                        type: integer
+                      last_block_hash:
+                        type: string
+                        nullable: true
+                      updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                  stats:
+                    type: object
+                    properties:
+                      cities:
+                        type: integer
+                      citizens:
+                        type: integer
+                      territories:
+                        type: integer
+                      objects:
+                        type: integer
+                      proposals:
+                        type: integer
+                      transactions:
+                        type: integer
+
+  /api/v1/cities:
+    get:
+      summary: List all cities
+      tags: [Cities]
+      parameters:
+        - name: phase
+          in: query
+          schema:
+            type: string
+            enum: [genesis, settlement, village, town, city, metropolis]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of cities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cities:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CitySummary"
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/v1/cities/nearby:
+    get:
+      summary: Find cities near a geographic point
+      tags: [Cities]
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: radius
+          in: query
+          description: Search radius in kilometers
+          schema:
+            type: number
+            default: 50
+      responses:
+        "200":
+          description: Cities within radius, sorted by distance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cities:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/CitySummary"
+                        - type: object
+                          properties:
+                            distance_km:
+                              type: number
+                  center:
+                    type: object
+                    properties:
+                      lat:
+                        type: number
+                      lng:
+                        type: number
+                  radius_km:
+                    type: number
+        "400":
+          description: Missing lat/lng parameters
+
+  /api/v1/cities/{id}:
+    get:
+      summary: Get city details
+      tags: [Cities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: City H3 index
+      responses:
+        "200":
+          description: City details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/City"
+        "404":
+          description: City not found
+
+  /api/v1/cities/{id}/citizens:
+    get:
+      summary: List active citizens of a city
+      tags: [Cities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated citizens list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  citizens:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Citizen"
+                  city_id:
+                    type: string
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/v1/cities/{id}/territories:
+    get:
+      summary: List territories within a city
+      tags: [Cities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: level
+          in: query
+          schema:
+            type: integer
+            enum: [4, 8, 16, 32]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Territories in city
+
+  /api/v1/cities/{id}/proposals:
+    get:
+      summary: List governance proposals for a city
+      tags: [Cities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, passed, rejected, executed, expired]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Proposals for city
+
+  /api/v1/cities/{id}/ubi:
+    get:
+      summary: Get UBI info for a city
+      tags: [Cities]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: UBI status and recent claims
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  city_id:
+                    type: string
+                  is_active:
+                    type: boolean
+                  phase:
+                    type: string
+                  citizen_count:
+                    type: integer
+                  treasury_sats:
+                    type: integer
+                    format: int64
+                  daily_per_citizen:
+                    type: integer
+                    format: int64
+                  monthly_cap:
+                    type: integer
+                    format: int64
+                  recent_claims:
+                    type: array
+                    items:
+                      type: object
+        "404":
+          description: City not found
+
+  /api/v1/territories/{id}:
+    get:
+      summary: Get territory details
+      tags: [Territories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Territory details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Territory"
+        "404":
+          description: Territory not found
+
+  /api/v1/territories/{id}/objects:
+    get:
+      summary: List objects in a territory
+      tags: [Territories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [item, waypoint, agent, billboard, rare, epic, legendary]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Objects in territory
+
+  /api/v1/territories:
+    get:
+      summary: List territories with filters
+      tags: [Territories]
+      parameters:
+        - name: owner
+          in: query
+          schema:
+            type: string
+        - name: level
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Filtered territories
+
+  /api/v1/objects/{id}:
+    get:
+      summary: Get object details
+      tags: [Objects]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocusObject"
+        "404":
+          description: Object not found
+
+  /api/v1/objects:
+    get:
+      summary: List objects with filters
+      tags: [Objects]
+      parameters:
+        - name: owner
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Filtered objects
+
+  /api/v1/citizens/{pubkey}:
+    get:
+      summary: Get citizen info across all cities
+      tags: [Citizens]
+      parameters:
+        - name: pubkey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Citizen memberships
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pubkey:
+                    type: string
+                  memberships:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CitizenMembership"
+                  active_cities:
+                    type: integer
+        "404":
+          description: Citizen not found
+
+  /api/v1/citizens/{pubkey}/territories:
+    get:
+      summary: List territories owned by a citizen
+      tags: [Citizens]
+      parameters:
+        - name: pubkey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Owned territories
+
+  /api/v1/citizens/{pubkey}/objects:
+    get:
+      summary: List objects owned by a citizen
+      tags: [Citizens]
+      parameters:
+        - name: pubkey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Owned objects
+
+  /api/v1/proposals/{id}:
+    get:
+      summary: Get proposal details
+      tags: [Governance]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Proposal details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Proposal"
+        "404":
+          description: Proposal not found
+
+  /api/v1/proposals/{id}/votes:
+    get:
+      summary: List votes on a proposal
+      tags: [Governance]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Votes on proposal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposal_id:
+                    type: string
+                  votes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Vote"
+
+  /api/v1/proposals:
+    get:
+      summary: List proposals with filters
+      tags: [Governance]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, passed, rejected, executed, expired]
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [parameter_change, contract_upgrade, treasury_spend, constitutional, emergency]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Filtered proposals
+
+  /api/v1/transactions/{txid}:
+    get:
+      summary: Get indexed transaction details
+      tags: [Status]
+      parameters:
+        - name: txid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transaction details
+        "404":
+          description: Transaction not found
+
+components:
+  schemas:
+    CitySummary:
+      type: object
+      properties:
+        id:
+          type: string
+          description: H3 index (resolution 7)
+        name:
+          type: string
+        description:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        h3_index:
+          type: string
+        founder_pubkey:
+          type: string
+        phase:
+          type: string
+          enum: [genesis, settlement, village, town, city, metropolis]
+        citizen_count:
+          type: integer
+        governance_type:
+          type: string
+          enum: [founder, tribal_council, republic, direct_democracy, senate]
+        treasury_sats:
+          type: integer
+          format: int64
+
+    City:
+      allOf:
+        - $ref: "#/components/schemas/CitySummary"
+        - type: object
+          properties:
+            unlocked_blocks:
+              type: integer
+            token_supply:
+              type: integer
+              default: 3200000
+            founded_block:
+              type: integer
+            founded_txid:
+              type: string
+
+    Citizen:
+      type: object
+      properties:
+        pubkey:
+          type: string
+        joined_block:
+          type: integer
+        joined_txid:
+          type: string
+        last_heartbeat:
+          type: string
+          format: date-time
+          nullable: true
+        territories_claimed:
+          type: integer
+
+    CitizenMembership:
+      allOf:
+        - $ref: "#/components/schemas/Citizen"
+        - type: object
+          properties:
+            city_id:
+              type: string
+            city_name:
+              type: string
+            city_phase:
+              type: string
+            is_active:
+              type: boolean
+
+    Territory:
+      type: object
+      properties:
+        id:
+          type: string
+        level:
+          type: integer
+          enum: [4, 8, 16, 32]
+        h3_index:
+          type: string
+        owner_pubkey:
+          type: string
+        stake_amount:
+          type: integer
+          format: int64
+        lock_height:
+          type: integer
+        parent_city:
+          type: string
+          nullable: true
+        claimed_block:
+          type: integer
+        claimed_txid:
+          type: string
+        is_active:
+          type: boolean
+        metadata:
+          type: object
+          nullable: true
+
+    LocusObject:
+      type: object
+      properties:
+        id:
+          type: string
+        object_type:
+          type: string
+          enum: [item, waypoint, agent, billboard, rare, epic, legendary]
+        h3_index:
+          type: string
+        owner_pubkey:
+          type: string
+        stake_amount:
+          type: integer
+          format: int64
+        content_hash:
+          type: string
+          nullable: true
+        manifest_hash:
+          type: string
+          nullable: true
+        parent_territory:
+          type: string
+          nullable: true
+        capabilities:
+          type: array
+          items:
+            type: string
+        deployed_block:
+          type: integer
+        is_active:
+          type: boolean
+
+    Proposal:
+      type: object
+      properties:
+        id:
+          type: string
+        proposal_type:
+          type: string
+          enum: [parameter_change, contract_upgrade, treasury_spend, constitutional, emergency]
+        scope:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        actions:
+          type: array
+          items:
+            type: object
+        deposit:
+          type: integer
+          format: int64
+        proposer_pubkey:
+          type: string
+        status:
+          type: string
+          enum: [active, passed, rejected, executed, expired]
+        votes_for:
+          type: integer
+        votes_against:
+          type: integer
+        votes_abstain:
+          type: integer
+        created_block:
+          type: integer
+        voting_ends_block:
+          type: integer
+        execution_txid:
+          type: string
+          nullable: true
+        city_id:
+          type: string
+          nullable: true
+
+    Vote:
+      type: object
+      properties:
+        voter_pubkey:
+          type: string
+        vote:
+          type: integer
+        vote_label:
+          type: string
+          enum: [no, yes, abstain]
+        block_height:
+          type: integer
+        txid:
+          type: string

@@ -1,0 +1,14 @@
+target/
+Cargo.lock
+*.swp
+*.swo
+*~
+.DS_Store
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+README.md
+docs/
+*.md
+!sample-wasm/*.wasm

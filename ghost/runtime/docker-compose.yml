@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  ghost-runtime:
+    build: .
+    container_name: ghost-runtime
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - GHOST_RUNTIME_ADDR=0.0.0.0:8080
+      - MAX_CONCURRENT_GHOSTS=100
+      - MAX_MEMORY_PER_GHOST=64MB
+      - MAX_EXECUTION_TIME=5s
+      - IPFS_GATEWAY=https://ipfs.io/ipfs
+      - ARWEAVE_GATEWAY=https://arweave.net
+      - ENABLE_PAYMENT_CHANNELS=true
+      - LOG_LEVEL=info
+      - RUST_LOG=info
+    volumes:
+      - ghost-cache:/app/cache
+      - ghost-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ghost-network
+
+  # Optional: Redis for distributed caching
+  redis:
+    image: redis:7-alpine
+    container_name: ghost-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - ghost-network
+
+  # Optional: Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ghost-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - ghost-network
+
+volumes:
+  ghost-cache:
+  ghost-logs:
+  redis-data:
+  prometheus-data:
+
+networks:
+  ghost-network:
+    driver: bridge

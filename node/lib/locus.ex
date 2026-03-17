@@ -63,7 +63,10 @@ defmodule Locus do
   def init(_init_arg) do
     Logger.info("Starting Locus Protocol Reference Node v0.1.0")
 
-    children = [
+    genesis_path = Application.get_env(:locus, :genesis_config_path, "")
+    metrics_output_path = Application.get_env(:locus, :metrics_output_path, "")
+
+    base_children = [
       # State management
       Locus.State,
       Locus.Registry,
@@ -83,16 +86,43 @@ defmodule Locus do
       ]}
     ]
 
-    Supervisor.init(children, strategy: :one_for_one)
+    reporter_children =
+      case metrics_output_path do
+        "" -> []
+        path -> [{Locus.RuntimeReporter, [output_path: path]}]
+      end
+
+    case genesis_path do
+      "" ->
+        Logger.warning("No LOCUS_GENESIS_CONFIG configured for this node")
+
+      path ->
+        case Locus.Genesis.load(path) do
+          {:ok, genesis} ->
+            Logger.info(
+              "Loaded genesis config #{path} with #{length(genesis["cities"])} cities and #{length(genesis["nodes"])} nodes"
+            )
+
+          {:error, reason} ->
+            Logger.warning("Failed to load genesis config #{path}: #{inspect(reason)}")
+        end
+    end
+
+    Supervisor.init(base_children ++ reporter_children, strategy: :one_for_one)
   end
 
   @doc """
   Get node status
   """
   def status do
+    genesis_path = Application.get_env(:locus, :genesis_config_path, "")
+
     %{
       version: "0.1.0",
       phase: "Phase 2 - Reference Node",
+      node_name: Application.get_env(:locus, :node_name, "locus-testnet-node"),
+      network: Application.get_env(:locus, :network, :testnet),
+      genesis: Locus.Genesis.summary(genesis_path),
       modules: [
         Locus.Chain,
         Locus.TxBuilder,

@@ -1,0 +1,32 @@
+{
+  "network": "testnet",
+  "cluster": "locus-local-testnet",
+  "start_height": 910000,
+  "arc_endpoint": "https://arc.gorillapool.io",
+  "nodes": [
+    {
+      "name": "locus-seed-a",
+      "role": "seed",
+      "host": "127.0.0.1",
+      "distribution_name": "seed_a",
+      "rpc_port": 4040,
+      "metrics_port": 9091
+    },
+    {
+      "name": "locus-validator-b",
+      "role": "validator",
+      "host": "127.0.0.1",
+      "distribution_name": "validator_b",
+      "rpc_port": 4041,
+      "metrics_port": 9092
+    },
+    {
+      "name": "locus-validator-c",
+      "role": "validator",
+      "host": "127.0.0.1",
+      "distribution_name": "validator_c",
+      "rpc_port": 4042,
+      "metrics_port": 9093
+    }
+  ]
+}
