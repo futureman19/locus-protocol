@@ -6,11 +6,28 @@ import objectsRouter from './routes/objects';
 import citizensRouter from './routes/citizens';
 import governanceRouter from './routes/governance';
 import statusRouter from './routes/status';
+import { Config } from './config';
 
-export function createApp(): express.Application {
+export function createApp(config: Config): express.Application {
   const app = express();
 
-  app.use(cors());
+  // SECURITY: Restrict CORS in production
+  const corsOptions = config.server.corsWhitelist
+    ? {
+        origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+          // Allow requests with no origin (mobile apps, curl, etc)
+          if (!origin) return callback(null, true);
+          if (config.server.corsWhitelist?.includes(origin)) {
+            return callback(null, true);
+          }
+          console.warn(`CORS blocked request from: ${origin}`);
+          callback(new Error('Not allowed by CORS'));
+        },
+        credentials: true,
+      }
+    : { origin: true }; // Allow all in dev (no whitelist set)
+
+  app.use(cors(corsOptions));
   app.use(express.json());
 
   // Health check

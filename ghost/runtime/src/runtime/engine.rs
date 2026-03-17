@@ -59,9 +59,11 @@ impl RuntimeEngine {
     }
 
     fn create_store(&self, limits: &ResourceLimits, host: HostFunctions) -> Result<Store<HostState>> {
+        // SECURITY FIX: Do NOT inherit host environment variables
+        // This prevents WASM modules from accessing sensitive host env vars
         let wasi = WasiCtxBuilder::new()
             .inherit_stdio()
-            .inherit_env()
+            // REMOVED: .inherit_env() - CRITICAL: This leaked all host env vars to sandbox
             .build();
 
         let state = HostState {

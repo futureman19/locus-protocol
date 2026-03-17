@@ -76,6 +76,10 @@ export class TransactionBuilder {
   // -- Payload builders matching Elixir reference --
 
   static buildCityFound(params: CityFoundParams): Buffer {
+    // SECURITY FIX: Validate signature is present and non-empty
+    if (!params.signature || params.signature.length === 0) {
+      throw new Error('SECURITY: City founding requires a valid signature');
+    }
     return TransactionBuilder.encode('city_found', {
       name: params.name,
       description: params.description || '',
@@ -86,7 +90,7 @@ export class TransactionBuilder {
       },
       founder_pubkey: params.founderPubkey,
       policies: params.policies || {},
-      signature: '',
+      signature: params.signature,
     });
   }
 
@@ -116,6 +120,13 @@ export class TransactionBuilder {
     toPubkey: string,
     price = 0,
   ): Buffer {
+    // SECURITY FIX: Validate pubkeys are non-empty
+    if (!fromPubkey || fromPubkey.length === 0) {
+      throw new Error('SECURITY: Territory transfer requires from_pubkey');
+    }
+    if (!toPubkey || toPubkey.length === 0) {
+      throw new Error('SECURITY: Territory transfer requires to_pubkey');
+    }
     return TransactionBuilder.encode('territory_transfer', {
       territory_id: territoryId,
       from_pubkey: fromPubkey,
@@ -138,6 +149,10 @@ export class TransactionBuilder {
   }
 
   static buildObjectDestroy(objectId: string, ownerPubkey: string, reason?: string): Buffer {
+    // SECURITY FIX: Validate owner pubkey
+    if (!ownerPubkey || ownerPubkey.length === 0) {
+      throw new Error('SECURITY: Object destroy requires owner_pubkey');
+    }
     return TransactionBuilder.encode('object_destroy', {
       object_id: objectId,
       owner_pubkey: ownerPubkey,
