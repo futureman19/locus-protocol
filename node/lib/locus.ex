@@ -92,6 +92,19 @@ defmodule Locus do
         path -> [{Locus.RuntimeReporter, [output_path: path]}]
       end
 
+    http_children =
+      if Application.get_env(:locus, :http_enabled, true) do
+        [
+          {Locus.HttpServer,
+           [
+             host: Application.get_env(:locus, :http_host, "0.0.0.0"),
+             port: Application.get_env(:locus, :http_port, 4100)
+           ]}
+        ]
+      else
+        []
+      end
+
     case genesis_path do
       "" ->
         Logger.warning("No LOCUS_GENESIS_CONFIG configured for this node")
@@ -108,7 +121,7 @@ defmodule Locus do
         end
     end
 
-    Supervisor.init(base_children ++ reporter_children, strategy: :one_for_one)
+    Supervisor.init(base_children ++ reporter_children ++ http_children, strategy: :one_for_one)
   end
 
   @doc """

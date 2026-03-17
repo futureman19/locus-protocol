@@ -1,0 +1,14 @@
+{
+  "name": "locus-benchmarks",
+  "version": "1.0.0",
+  "description": "Performance benchmarks for Locus Protocol",
+  "scripts": {
+    "bench:all": "npm run bench:tx && npm run bench:query && npm run bench:wasm",
+    "bench:tx": "k6 run tx-throughput/city-founding.js && k6 run tx-throughput/citizen-join.js && k6 run tx-throughput/heartbeat-ingestion.js",
+    "bench:query": "k6 run query-performance/spatial-query.js",
+    "bench:wasm": "k6 run wasm-runtime/ghost-execution.js"
+  },
+  "devDependencies": {
+    "@types/k6": "^0.45.0"
+  }
+}

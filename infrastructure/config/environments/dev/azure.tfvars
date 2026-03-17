@@ -1,0 +1,12 @@
+project_name        = "locus"
+environment         = "dev"
+azure_location      = "westus2"
+resource_group      = "locus-dev-rg"
+address_space       = "10.70.0.0/16"
+app_subnet_cidr     = "10.70.0.0/20"
+db_subnet_cidr      = "10.70.16.0/20"
+db_name             = "locus_indexer"
+aks_cluster_name    = "locus-dev"
+node_vm_size        = "Standard_D4s_v5"
+node_min_instances  = 2
+node_max_instances  = 4

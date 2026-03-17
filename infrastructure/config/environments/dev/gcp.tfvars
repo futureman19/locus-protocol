@@ -1,0 +1,12 @@
+project_name      = "locus"
+environment       = "dev"
+gcp_project_id    = "locus-dev"
+gcp_region        = "us-west1"
+zones             = ["us-west1-a", "us-west1-b"]
+network_cidr      = "10.40.0.0/16"
+subnetwork_cidr   = "10.40.0.0/20"
+db_name           = "locus_indexer"
+cluster_name      = "locus-dev"
+node_machine_type = "e2-standard-4"
+node_min_replicas = 2
+node_max_replicas = 4

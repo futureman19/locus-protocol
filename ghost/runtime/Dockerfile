@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Cargo files first for better layer caching
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml build.rs ./
 
 # Copy source code
 COPY src ./src
+COPY sample-wasm ./sample-wasm
 
 # Build release binary
 RUN cargo build --release
@@ -31,6 +32,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security

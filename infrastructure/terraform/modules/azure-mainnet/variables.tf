@@ -1,0 +1,12 @@
+variable "project_name" { type = string }
+variable "environment" { type = string }
+variable "azure_location" { type = string }
+variable "resource_group" { type = string }
+variable "address_space" { type = string }
+variable "app_subnet_cidr" { type = string }
+variable "db_subnet_cidr" { type = string }
+variable "db_name" { type = string }
+variable "aks_cluster_name" { type = string }
+variable "node_vm_size" { type = string }
+variable "node_min_instances" { type = number }
+variable "node_max_instances" { type = number }

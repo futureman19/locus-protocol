@@ -1,0 +1,76 @@
+{
+  "title": "Locus Mainnet Overview",
+  "uid": "locus-mainnet",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Indexer Health",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "max(probe_success{job=\"locus-indexer\"})",
+          "legendFormat": "indexer"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Ghost Runtime Health",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "max(probe_success{job=\"locus-ghost\"})",
+          "legendFormat": "ghost"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Node Health",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "expr": "max(probe_success{job=\"locus-node\"})",
+          "legendFormat": "node"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Indexer Probe Latency P95",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(probe_http_duration_seconds_bucket{job=\"locus-indexer\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RDS Replica Lag",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "expr": "aws_rds_replica_lag_maximum",
+          "legendFormat": "{{dbinstance_identifier}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RDS Free Storage",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "aws_rds_free_storage_space_average",
+          "legendFormat": "{{dbinstance_identifier}}"
+        }
+      ]
+    }
+  ]
+}

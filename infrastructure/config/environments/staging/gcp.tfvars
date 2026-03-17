@@ -1,0 +1,12 @@
+project_name      = "locus"
+environment       = "staging"
+gcp_project_id    = "locus-staging"
+gcp_region        = "us-west1"
+zones             = ["us-west1-a", "us-west1-b", "us-west1-c"]
+network_cidr      = "10.50.0.0/16"
+subnetwork_cidr   = "10.50.0.0/20"
+db_name           = "locus_indexer"
+cluster_name      = "locus-staging"
+node_machine_type = "e2-standard-4"
+node_min_replicas = 3
+node_max_replicas = 6

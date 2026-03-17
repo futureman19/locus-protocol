@@ -1,0 +1,45 @@
+{
+  "network": "testnet",
+  "cluster": "locus-staging",
+  "generated_at": "2026-03-16T00:00:00Z",
+  "chain": {
+    "protocol": "locus",
+    "network": "testnet",
+    "start_height": 1800000
+  },
+  "nodes": [
+    {
+      "name": "locus-staging-seed-a",
+      "role": "seed",
+      "host": "locus-staging-seed-a.internal",
+      "distribution_name": "locus_staging_seed_a"
+    },
+    {
+      "name": "locus-staging-validator-b",
+      "role": "validator",
+      "host": "locus-staging-validator-b.internal",
+      "distribution_name": "locus_staging_validator_b"
+    },
+    {
+      "name": "locus-staging-validator-c",
+      "role": "validator",
+      "host": "locus-staging-validator-c.internal",
+      "distribution_name": "locus_staging_validator_c"
+    }
+  ],
+  "cities": [
+    {
+      "slug": "beacon-staging",
+      "name": "Beacon Staging",
+      "phase": "settlement",
+      "citizen_count": 3,
+      "blocks_unlocked": 2,
+      "treasury_bsv": 3200000000,
+      "founder_pubkey": "02beaconstaging",
+      "location": {
+        "lat": 47.6062,
+        "lng": -122.3321
+      }
+    }
+  ]
+}

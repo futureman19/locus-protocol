@@ -1,0 +1,39 @@
+{
+  "network": "testnet",
+  "cluster": "locus-dev",
+  "generated_at": "2026-03-16T00:00:00Z",
+  "chain": {
+    "protocol": "locus",
+    "network": "testnet",
+    "start_height": 1700000
+  },
+  "nodes": [
+    {
+      "name": "locus-dev-seed-a",
+      "role": "seed",
+      "host": "locus-dev-seed-a.internal",
+      "distribution_name": "locus_dev_seed_a"
+    },
+    {
+      "name": "locus-dev-validator-b",
+      "role": "validator",
+      "host": "locus-dev-validator-b.internal",
+      "distribution_name": "locus_dev_validator_b"
+    }
+  ],
+  "cities": [
+    {
+      "slug": "atlas-dev",
+      "name": "Atlas Dev",
+      "phase": "genesis",
+      "citizen_count": 1,
+      "blocks_unlocked": 2,
+      "treasury_bsv": 3200000000,
+      "founder_pubkey": "02atlasdev",
+      "location": {
+        "lat": 37.7749,
+        "lng": -122.4194
+      }
+    }
+  ]
+}

@@ -33,6 +33,9 @@ defmodule Locus.MixProject do
       # MessagePack for binary payloads
       {:msgpax, "~> 2.4"},
 
+      # Lightweight HTTP endpoints for health and status.
+      {:plug_cowboy, "~> 2.7"},
+
       # H3 hexagonal grid indexing
       {:h3, "~> 3.0", optional: true},
 

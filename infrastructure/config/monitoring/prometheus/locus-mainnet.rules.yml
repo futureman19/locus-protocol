@@ -1,0 +1,63 @@
+groups:
+  - name: locus-mainnet
+    interval: 30s
+    rules:
+      - alert: LocusIndexerUnreachable
+        expr: probe_success{job="locus-indexer"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: indexer
+        annotations:
+          summary: Locus indexer health check is failing
+          description: The public indexer endpoint has failed blackbox probing for more than 2 minutes.
+
+      - alert: LocusGhostRuntimeUnreachable
+        expr: probe_success{job="locus-ghost"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: ghost-runtime
+        annotations:
+          summary: Ghost runtime health check is failing
+          description: The internal ghost runtime endpoint is not responding to health probes.
+
+      - alert: LocusNodeUnreachable
+        expr: probe_success{job="locus-node"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          service: locus-node
+        annotations:
+          summary: At least one reference node is unhealthy
+          description: The internal node load balancer is not returning healthy status for node probes.
+
+      - alert: LocusIndexerHighLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(probe_http_duration_seconds_bucket{job="locus-indexer"}[5m]))) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: Indexer API latency is elevated
+          description: The 95th percentile health probe latency has exceeded 1s for 10 minutes.
+
+      - alert: LocusRdsReplicaLagHigh
+        expr: aws_rds_replica_lag_maximum > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: postgres
+        annotations:
+          summary: PostgreSQL read replica lag is elevated
+          description: Replica lag has remained above 30 seconds for 10 minutes.
+
+      - alert: LocusRdsFreeStorageLow
+        expr: aws_rds_free_storage_space_average < 50000000000
+        for: 15m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: PostgreSQL free storage is low
+          description: The primary RDS instance has less than 50 GB of free storage remaining.

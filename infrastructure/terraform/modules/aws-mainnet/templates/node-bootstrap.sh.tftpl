@@ -1,0 +1,50 @@
+#!/bin/bash
+set -euo pipefail
+
+dnf install -y docker jq awscli
+systemctl enable --now docker
+
+mkdir -p /etc/locus /opt/locus /var/lib/locus/status
+
+aws s3 cp "s3://${artifacts_bucket}/${genesis_key}" /opt/locus/genesis.json --region "${aws_region}"
+
+ARC_SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id "${arc_secret_arn}" --query SecretString --output text --region "${aws_region}" || echo '{}')"
+ARC_ENDPOINT="$(printf '%s' "$${ARC_SECRET_JSON}" | jq -r '.arc_endpoint // "https://arc.taal.com"')"
+ARC_API_KEY="$(printf '%s' "$${ARC_SECRET_JSON}" | jq -r '.arc_api_key // ""')"
+
+aws ecr get-login-password --region "${aws_region}" | docker login --username AWS --password-stdin "${node_registry}"
+docker pull "${node_image}"
+
+cat >/etc/locus/node.env <<EOF
+LOCUS_NODE_NAME=$(hostname -s)
+LOCUS_NETWORK=${protocol_network}
+LOCUS_GENESIS_CONFIG=/opt/locus/genesis.json
+LOCUS_METRICS_OUTPUT=/var/lib/locus/status/status.json
+LOCUS_HTTP_ENABLED=true
+LOCUS_HTTP_HOST=0.0.0.0
+LOCUS_HTTP_PORT=${node_http_port}
+LOG_LEVEL=info
+ARC_ENDPOINT=$${ARC_ENDPOINT}
+ARC_API_KEY=$${ARC_API_KEY}
+EOF
+
+cat >/etc/systemd/system/locus-node.service <<EOF
+[Unit]
+Description=Locus Protocol Node
+After=docker.service
+Requires=docker.service
+
+[Service]
+Restart=always
+RestartSec=10
+ExecStartPre=-/usr/bin/docker rm -f locus-node
+ExecStart=/usr/bin/docker run --name locus-node --env-file /etc/locus/node.env -p ${node_http_port}:${node_http_port} -v /var/lib/locus/status:/var/lib/locus/status --log-driver=awslogs --log-opt awslogs-region=${aws_region} --log-opt awslogs-group=${node_log_group_name} --log-opt awslogs-stream-prefix=locus-node ${node_image}
+ExecStop=/usr/bin/docker stop locus-node
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable locus-node
+systemctl restart locus-node

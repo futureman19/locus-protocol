@@ -2,10 +2,11 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Pool } from 'pg';
 import { loadConfig } from '../config';
+import { databasePoolConfig } from './pool';
 
 async function migrate() {
   const config = loadConfig();
-  const pool = new Pool({ connectionString: config.database.url });
+  const pool = new Pool(databasePoolConfig(config));
 
   try {
     // Create migrations tracking table
@@ -17,7 +18,7 @@ async function migrate() {
     `);
 
     // Read migration files
-    const migrationsDir = join(__dirname, 'migrations');
+    const migrationsDir = resolveMigrationsDir();
     const migrationFile = '001_initial.sql';
 
     const { rows } = await pool.query(
@@ -42,6 +43,25 @@ async function migrate() {
   } finally {
     await pool.end();
   }
+}
+
+function resolveMigrationsDir(): string {
+  const candidates = [
+    join(__dirname, 'migrations'),
+    join(process.cwd(), 'dist', 'db', 'migrations'),
+    join(process.cwd(), 'src', 'db', 'migrations'),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      readFileSync(join(candidate, '001_initial.sql'), 'utf8');
+      return candidate;
+    } catch (_error) {
+      continue;
+    }
+  }
+
+  throw new Error('Unable to locate SQL migration directory');
 }
 
 migrate().catch((err) => {

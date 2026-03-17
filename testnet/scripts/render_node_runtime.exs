@@ -50,6 +50,7 @@ nodes =
       "LOCUS_NETWORK=#{network}",
       "LOCUS_GENESIS_CONFIG=#{genesis_path}",
       "LOCUS_METRICS_OUTPUT=#{status_path}",
+      "LOCUS_HTTP_PORT=#{node["metrics_port"] || 4100}",
       "ARC_ENDPOINT=#{node["arc_endpoint"] || arc_endpoint}"
     ]
 

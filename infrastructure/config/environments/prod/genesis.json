@@ -1,0 +1,58 @@
+{
+  "network": "mainnet",
+  "cluster": "locus-mainnet",
+  "generated_at": "2026-03-16T00:00:00Z",
+  "chain": {
+    "protocol": "locus",
+    "network": "mainnet",
+    "start_height": 0
+  },
+  "nodes": [
+    {
+      "name": "locus-mainnet-seed-a",
+      "role": "seed",
+      "host": "locus-mainnet-seed-a.internal",
+      "distribution_name": "locus_mainnet_seed_a"
+    },
+    {
+      "name": "locus-mainnet-validator-b",
+      "role": "validator",
+      "host": "locus-mainnet-validator-b.internal",
+      "distribution_name": "locus_mainnet_validator_b"
+    },
+    {
+      "name": "locus-mainnet-validator-c",
+      "role": "validator",
+      "host": "locus-mainnet-validator-c.internal",
+      "distribution_name": "locus_mainnet_validator_c"
+    }
+  ],
+  "cities": [
+    {
+      "slug": "atlas-prime",
+      "name": "Atlas Prime",
+      "phase": "genesis",
+      "citizen_count": 1,
+      "blocks_unlocked": 2,
+      "treasury_bsv": 3200000000,
+      "founder_pubkey": "02atlasprime",
+      "location": {
+        "lat": 37.7749,
+        "lng": -122.4194
+      }
+    },
+    {
+      "slug": "beacon-hill",
+      "name": "Beacon Hill",
+      "phase": "settlement",
+      "citizen_count": 3,
+      "blocks_unlocked": 2,
+      "treasury_bsv": 3200000000,
+      "founder_pubkey": "02beaconhill",
+      "location": {
+        "lat": 47.6062,
+        "lng": -122.3321
+      }
+    }
+  ]
+}

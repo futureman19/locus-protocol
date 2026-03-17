@@ -1,0 +1,12 @@
+variable "project_name" { type = string }
+variable "environment" { type = string }
+variable "gcp_project_id" { type = string }
+variable "gcp_region" { type = string }
+variable "zones" { type = list(string) }
+variable "network_cidr" { type = string }
+variable "subnetwork_cidr" { type = string }
+variable "db_name" { type = string }
+variable "cluster_name" { type = string }
+variable "node_machine_type" { type = string }
+variable "node_min_replicas" { type = number }
+variable "node_max_replicas" { type = number }

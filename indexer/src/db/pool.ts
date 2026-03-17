@@ -1,11 +1,22 @@
-import { Pool, PoolClient, QueryResult } from 'pg';
+import { Pool, PoolClient, PoolConfig, QueryResult } from 'pg';
 import { Config } from '../config';
 
 let pool: Pool;
 
 export function initPool(config: Config): Pool {
-  pool = new Pool({ connectionString: config.database.url });
+  pool = new Pool(databasePoolConfig(config));
   return pool;
+}
+
+export function databasePoolConfig(config: Config): PoolConfig {
+  return {
+    connectionString: config.database.url,
+    ssl: config.database.ssl
+      ? {
+          rejectUnauthorized: config.database.rejectUnauthorized,
+        }
+      : undefined,
+  };
 }
 
 export function getPool(): Pool {
