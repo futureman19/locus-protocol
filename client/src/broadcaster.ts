@@ -1,95 +1,59 @@
 /**
- * ARC broadcaster for transaction submission
+ * ARC Broadcaster — broadcast transactions to BSV network via ARC.
  */
 
-import {
-  Transaction,
-  ARC
-} from '@bsv/sdk';
-
-import {
-  Network,
-  ARCConfig,
-  ARCBroadcastResult
-} from './types';
-
-import {
-  ARC_ENDPOINTS
-} from './constants';
+import { ARCConfig, ARCBroadcastResult, Network } from './types';
+import { ARC_ENDPOINTS } from './constants/networks';
 
 export class ARCBroadcaster {
   private config: ARCConfig;
-  private arc: ARC;
 
-  constructor(config: Partial<ARCConfig> = {}) {
+  constructor(network: Network = 'testnet', apiKey?: string) {
     this.config = {
-      endpoint: config.endpoint || ARC_ENDPOINTS.TESTNET,
-      apiKey: config.apiKey
+      endpoint: ARC_ENDPOINTS[network],
+      apiKey,
+    };
+  }
+
+  /** Broadcast a raw transaction hex to the network. */
+  async broadcast(txHex: string): Promise<ARCBroadcastResult> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
     };
 
-    this.arc = new ARC(this.config.endpoint, this.config.apiKey);
-  }
-
-  /**
-   * Broadcast a transaction to the BSV network
-   */
-  async broadcast(tx: Transaction): Promise<ARCBroadcastResult> {
-    try {
-      const txHex = tx.toString();
-      
-      const response = await this.arc.broadcast({
-        rawTx: txHex,
-        waitForStatus: 'MINED' // or 'SENT' for faster response
-      });
-
-      return {
-        txid: response.txid || '',
-        txStatus: response.status || 'UNKNOWN',
-        blockHash: response.blockHash,
-        blockHeight: response.blockHeight
-      };
-    } catch (error) {
-      throw new Error(`Broadcast failed: ${error instanceof Error ? error.message : String(error)}`);
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
+
+    const response = await fetch(`${this.config.endpoint}/v1/tx`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ rawTx: txHex }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`ARC broadcast failed (${response.status}): ${error}`);
+    }
+
+    return response.json() as Promise<ARCBroadcastResult>;
   }
 
-  /**
-   * Get transaction status
-   */
+  /** Query transaction status. */
   async getStatus(txid: string): Promise<ARCBroadcastResult> {
-    try {
-      const response = await this.arc.getTxStatus(txid);
-
-      return {
-        txid,
-        txStatus: response.status || 'UNKNOWN',
-        blockHash: response.blockHash,
-        blockHeight: response.blockHeight
-      };
-    } catch (error) {
-      throw new Error(`Status check failed: ${error instanceof Error ? error.message : String(error)}`);
+    const headers: Record<string, string> = {};
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
-  }
 
-  /**
-   * Get current blockchain height
-   */
-  async getHeight(): Promise<number> {
-    try {
-      // Query ARC for chain tip
-      const response = await fetch(`${this.config.endpoint}/v1/chain/height`, {
-        headers: this.config.apiKey ? { 'Authorization': `Bearer ${this.config.apiKey}` } : {}
-      });
+    const response = await fetch(`${this.config.endpoint}/v1/tx/${txid}`, {
+      headers,
+    });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.height || 0;
-    } catch (error) {
-      console.warn('Failed to get height from ARC:', error);
-      return 0;
+    if (!response.ok) {
+      throw new Error(`ARC status query failed (${response.status})`);
     }
+
+    return response.json() as Promise<ARCBroadcastResult>;
   }
 }
